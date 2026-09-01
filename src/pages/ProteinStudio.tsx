@@ -225,6 +225,7 @@ export const ProteinStudio: React.FC<ProteinStudioProps> = ({ onNavigate }) => {
       content: file.content || '',
       format: kind === 'protein_fasta' ? 'FASTA' : 'Text',
     });
+    setPastedSequence('');
     clearErrors();
   };
 
@@ -576,7 +577,15 @@ export const ProteinStudio: React.FC<ProteinStudioProps> = ({ onNavigate }) => {
               </div>
               <FileUploader accept=".fasta,.fa,.faa,.txt" label="Drop protein FASTA" description="Supported: .fasta, .fa, .faa, .txt" onFileSelected={handleSequenceFiles} />
               {sequenceFile && <FileCard file={sequenceFile} onClear={() => setSequenceFile(null)} />}
-              <textarea value={pastedSequence} onChange={(e) => setPastedSequence(e.target.value)} placeholder={insulinFasta} className="w-full h-32 p-2.5 font-mono text-xs bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-500" />
+              <textarea
+                value={pastedSequence}
+                onChange={(e) => {
+                  setPastedSequence(e.target.value);
+                  if (e.target.value.trim()) setSequenceFile(null);
+                }}
+                placeholder={insulinFasta}
+                className="w-full h-32 p-2.5 font-mono text-xs bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-500"
+              />
               <button disabled={(!sequenceFile && !pastedSequence.trim()) || executionState === 'loading'} onClick={handleAnalyzeSequence} className="w-full py-2.5 bg-sky-600 hover:bg-sky-700 text-white rounded-lg text-xs font-bold disabled:opacity-50 flex items-center justify-center gap-2">
                 {executionState === 'loading' ? <RefreshCw className="w-4 h-4 animate-spin" /> : <FileText className="w-4 h-4" />}
                 <span>Analyze Sequence</span>

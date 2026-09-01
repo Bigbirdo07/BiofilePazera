@@ -148,9 +148,14 @@ export function parseFastaHeader(headerLine: string): ParsedHeaderInfo {
 
 export function parseProteinInput(raw: string): ParsedProteinInput {
   const lines = raw.split(/\r?\n/);
-  const firstHeader = lines.find((line) => line.trim().startsWith('>'));
-  const sequence = lines
-    .filter((line) => !line.trim().startsWith('>'))
+  const records = lines.filter((line) => line.trim().startsWith('>')).length;
+  const firstHeaderIndex = lines.findIndex((line) => line.trim().startsWith('>'));
+  const firstHeader = firstHeaderIndex >= 0 ? lines[firstHeaderIndex] : undefined;
+  const nextHeaderIndex = lines.findIndex((line, index) => index > firstHeaderIndex && line.trim().startsWith('>'));
+  const sequenceLines = firstHeaderIndex >= 0
+    ? lines.slice(firstHeaderIndex + 1, nextHeaderIndex === -1 ? undefined : nextHeaderIndex)
+    : lines;
+  const sequence = sequenceLines
     .join('')
     .replace(/[^A-Za-z*]/g, '')
     .toUpperCase()
@@ -160,7 +165,7 @@ export function parseProteinInput(raw: string): ParsedProteinInput {
   return {
     header: firstHeader ? parseFastaHeader(firstHeader) : undefined,
     sequence,
-    records: lines.filter((line) => line.trim().startsWith('>')).length,
+    records,
     nucleotideWarning: sequence.length >= 16 && nucleotideLetters / sequence.length > 0.9 && nonDnaProteinLetters === 0,
   };
 }

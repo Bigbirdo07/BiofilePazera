@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import {
   classifyProteinStudioInput,
   classifyStructureSource,
@@ -29,6 +30,19 @@ function testUniProtFastaParsing() {
 
   const malformed = parseProteinInput('>not a uniprot header\nMEEPQSDPSV');
   assert.equal(malformed.header?.accession, undefined);
+}
+
+function testBundledProteinExamples() {
+  const spike = parseProteinInput(readFileSync('rc-test-data/protein_example.fasta', 'utf8'));
+  assert.equal(spike.header?.accession, 'P0DTC2');
+  assert.equal(spike.header?.entryName, 'SPIKE_SARS2');
+  assert.equal(spike.sequence.length, 80);
+
+  const multi = parseProteinInput(readFileSync('rc-test-data/lightweight_protein_examples.fasta', 'utf8'));
+  assert.equal(multi.header?.accession, 'P01308');
+  assert.equal(multi.header?.entryName, 'INS_HUMAN');
+  assert.equal(multi.sequence.length, 110);
+  assert.equal(multi.records, 5);
 }
 
 function testInputClassification() {
@@ -100,6 +114,7 @@ function testStateResetInvariant() {
 }
 
 testUniProtFastaParsing();
+testBundledProteinExamples();
 testInputClassification();
 testSourceSemantics();
 testPlddt();
