@@ -1,0 +1,22 @@
+>seq_alpha synthetic test record
+ATGCGTACGT
+AGCTAGCTAG
+>seq_beta synthetic test record
+GGGGCCCCAA
+AATTTT
+>seq_gamma synthetic test record
+NNNNACGTAC
+GTNNNN
+>seq_delta synthetic test record
+TTTTGGGGCC
+CCAAAA
+>seq_epsilon synthetic test record
+ACACACACGT
+GTGTGT
+>seq_zeta synthetic test record
+ATGAAATAG
+>seq_eta synthetic test record
+CCCGGGAAATTT
+>seq_theta synthetic test record
+GATTACAGAT
+TACA

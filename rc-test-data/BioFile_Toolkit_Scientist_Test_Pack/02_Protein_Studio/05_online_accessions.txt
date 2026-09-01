@@ -1,0 +1,5 @@
+ONLINE LOOKUP CONTROLS
+UniProt: P04637   # Human p53, canonical 393 aa
+RCSB PDB: 1UBQ    # Ubiquitin experimental X-ray structure
+RCSB PDB: 1CRN    # Crambin experimental X-ray structure
+AlphaFold DB: P04637  # Predicted human p53 model, if available

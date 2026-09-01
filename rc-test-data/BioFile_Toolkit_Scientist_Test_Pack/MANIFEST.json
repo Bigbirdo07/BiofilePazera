@@ -1,0 +1,167 @@
+[
+  {
+    "path": "01_Sequence_Tools/01_short_dna_controls.fasta",
+    "bytes": 147,
+    "sha256": "f6262f6174c580671747b783c2d07eb8e31c6292ea061739675c767a44e8d0bd"
+  },
+  {
+    "path": "01_Sequence_Tools/02_rna_control.fasta",
+    "bytes": 65,
+    "sha256": "e055af6a59f1250739e7bc9186c590ff666b058e1ae70d8d5766952a627f1f21"
+  },
+  {
+    "path": "01_Sequence_Tools/03_iupac_ambiguity.fasta",
+    "bytes": 30,
+    "sha256": "fbb7401a98cfb91e0a5a41e272b2b2dd1d8edecdb89d26aeaa2988def4785bd4"
+  },
+  {
+    "path": "01_Sequence_Tools/04_known_coding_sequence.fasta",
+    "bytes": 107,
+    "sha256": "474ca3edcfc5d279b685c1f95cfb9c33f62a47ad85f43d9fad1a64efa7a6d363"
+  },
+  {
+    "path": "01_Sequence_Tools/README_SEQUENCE_TOOLS.txt",
+    "bytes": 467,
+    "sha256": "42d9d134eca77d8de0f5b4940228fcb8af78e71bdc3432404d92c8c088ab5b0a"
+  },
+  {
+    "path": "02_Protein_Studio/01_1UBQ_ubiquitin_reference.fasta",
+    "bytes": 116,
+    "sha256": "3895f7aff8a01b1867dc2e44a28706a25dec830958740299c3ea7a74d05e6288"
+  },
+  {
+    "path": "02_Protein_Studio/02_1CRN_crambin_reference.fasta",
+    "bytes": 84,
+    "sha256": "7528a6e33341a907c016855cf20cfc95b7b302c1cdeb1f5ebb133ee48a7c514a"
+  },
+  {
+    "path": "02_Protein_Studio/03_protein_property_controls.fasta",
+    "bytes": 128,
+    "sha256": "da7ff6e944fc7f16b1da06e983cd095c44850678c72c9608f32b433bf8762ede"
+  },
+  {
+    "path": "02_Protein_Studio/04_minimal_experimental_structure.pdb",
+    "bytes": 612,
+    "sha256": "0c28e71368df5e1c1eb7b636a5792d187160bac582d8cf64d6d39770a4931037"
+  },
+  {
+    "path": "02_Protein_Studio/05_online_accessions.txt",
+    "bytes": 251,
+    "sha256": "95232ad50298587a193206e67eaccdef72c59313aef09699bf15a0545ef8ccab"
+  },
+  {
+    "path": "02_Protein_Studio/README_PROTEIN_STUDIO.txt",
+    "bytes": 555,
+    "sha256": "c25e516b86c43d230b8e33d7e5edae20b3dbbbb6afa12eaf034701b2b5332b1e"
+  },
+  {
+    "path": "03_File_Tools/01_valid_multi_record.fasta",
+    "bytes": 395,
+    "sha256": "c118c9f01acfbe9e01b9486b180e9e61148e798fcc098b6d491a3a37ef6fbbe5"
+  },
+  {
+    "path": "03_File_Tools/01_valid_multi_record.fasta.gz",
+    "bytes": 196,
+    "sha256": "a6777f71548a6e47f42a96c83f18b76efe3f2c6341ffae24b75b1ee1fb4a17ce"
+  },
+  {
+    "path": "03_File_Tools/02_ids_to_extract.txt",
+    "bytes": 49,
+    "sha256": "cd9652a7f8caab93a5da0bb2e095585b5c0c5fe1384745bb2b7218ff05549658"
+  },
+  {
+    "path": "03_File_Tools/03_invalid_no_header.fasta",
+    "bytes": 37,
+    "sha256": "0991a6ded4ec3df74449a39af205ff46ac5828f288b2dc45b4af56adb1e33dbf"
+  },
+  {
+    "path": "03_File_Tools/04_invalid_character.fasta",
+    "bytes": 26,
+    "sha256": "ba1105a921d837a4abc02c1d00c08e328a0cb3be09afe9747bf7e90c154f7688"
+  },
+  {
+    "path": "03_File_Tools/05_empty_record.fasta",
+    "bytes": 37,
+    "sha256": "d4b917c738a135ce8505a8111da73c121357bce031d44483b26e5e57220a361d"
+  },
+  {
+    "path": "03_File_Tools/06_valid_quality_control.fastq",
+    "bytes": 296,
+    "sha256": "db9ebcb5278b6a29d34f50000d4d4e696354469d564edd399ab1afe45eb05ff2"
+  },
+  {
+    "path": "03_File_Tools/06_valid_quality_control.fastq.gz",
+    "bytes": 166,
+    "sha256": "980ad75c89f8e4a15b9d817fefe76dd1bff8029edec80c68fd5fda98385560ea"
+  },
+  {
+    "path": "03_File_Tools/07_wrapped_fastq.fastq",
+    "bytes": 128,
+    "sha256": "0b64c5fd4f4b2830acb5e18e98db45649136d88e39afa8e28a44eafb62a5880e"
+  },
+  {
+    "path": "03_File_Tools/08_invalid_fastq_length_mismatch.fastq",
+    "bytes": 28,
+    "sha256": "389e95722f3ed1687aaffba24da55853b00b9ea77f4034f18390cdb340591a1a"
+  },
+  {
+    "path": "03_File_Tools/09_merge_part1.fasta",
+    "bytes": 36,
+    "sha256": "ed67d4f00e8c4eb287b30a6a037b3c2ed9878a4014d38273519f809c466fd0e0"
+  },
+  {
+    "path": "03_File_Tools/10_merge_part2.fasta",
+    "bytes": 35,
+    "sha256": "364ae0fecca678d95fcbd2bfba5afc83548098571666f6d85847c171fe02b95b"
+  },
+  {
+    "path": "03_File_Tools/11_checksum_target.txt",
+    "bytes": 46,
+    "sha256": "bf420c0aef1e808f999ef57c6cc845b26c49b3581a444d4ba39fd147848574f5"
+  },
+  {
+    "path": "03_File_Tools/12_checksum_expected_sha256.txt",
+    "bytes": 65,
+    "sha256": "8c59b9a03c92e4fc64fb064635bf55ff832a090607b63a7f36ffed28d026fe02"
+  },
+  {
+    "path": "03_File_Tools/13_split_stress_test_5000_reads.fastq",
+    "bytes": 1110000,
+    "sha256": "fab7f4cb687c4ab016d0a42d5654347bb6f4fbe968e67e806f58aba64a9c25c5"
+  },
+  {
+    "path": "03_File_Tools/13_split_stress_test_5000_reads.fastq.gz",
+    "bytes": 15326,
+    "sha256": "6b7aa2482bbc136b6f5834896f0a0cef4a749ba00f52a2a486dd5a56a76bcbed"
+  },
+  {
+    "path": "03_File_Tools/README_FILE_TOOLS.txt",
+    "bytes": 681,
+    "sha256": "9c849d472c3b8abc6c3c92f74888fe81a9765ca7dc0ee23e0927a749df00c36b"
+  },
+  {
+    "path": "ANSWER_KEY/file_tools_answers.md",
+    "bytes": 1591,
+    "sha256": "2898a39d622e8b69891cbcacb889e1b772c7281f9008eac62006388fa1ce6a18"
+  },
+  {
+    "path": "ANSWER_KEY/protein_studio_answers.md",
+    "bytes": 1284,
+    "sha256": "a7cbc33f0a6c2901f71c2d3bee0d4a761d5328c2201a75cdf924ab432bf62137"
+  },
+  {
+    "path": "ANSWER_KEY/sequence_tools_answers.md",
+    "bytes": 1108,
+    "sha256": "c76c1be4469452e1417b29bd9f1476be5e63f48974c9a95fa6ff0b12b32e5bc1"
+  },
+  {
+    "path": "MY_TEST_LOG.md",
+    "bytes": 439,
+    "sha256": "b4ba18e80f826b7f3432ce851309dacb026d0dfb0ab7df4d530e88549762131e"
+  },
+  {
+    "path": "START_HERE.md",
+    "bytes": 954,
+    "sha256": "0a764233046bb9fbb5112a45abdf632912fcc4d6f8c559dc67cdbdb6aaa54c3a"
+  }
+]

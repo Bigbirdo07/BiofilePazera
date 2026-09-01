@@ -1,0 +1,11 @@
+HEADER    SYNTHETIC STRUCTURE TEST CONTROL                 01-SEP-26   TST1
+TITLE     MINIMAL FIVE-RESIDUE PDB FIXTURE FOR BIOFILE TOOLKIT
+EXPDTA    X-RAY DIFFRACTION
+REMARK   2 RESOLUTION.    2.00 ANGSTROMS.
+ATOM      1  CA  ALA A   1       0.000   0.000   0.000  1.00 21.00           C
+ATOM      2  CA  GLY A   2       3.800   0.000   0.000  1.00 22.00           C
+ATOM      3  CA  SER A   3       7.600   0.000   0.000  1.00 23.00           C
+ATOM      4  CA  LEU A   4      11.400   0.000   0.000  1.00 24.00           C
+ATOM      5  CA  LYS A   5      15.200   0.000   0.000  1.00 25.00           C
+TER
+END
