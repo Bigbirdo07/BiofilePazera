@@ -11,6 +11,7 @@ export interface ParsedHeaderInfo {
   proteinName?: string;
   organism?: string;
   gene?: string;
+  pdbId?: string;
 }
 
 export interface ParsedProteinInput {
@@ -72,6 +73,7 @@ export interface MutationDescription {
 }
 
 const uniprotAccessionPattern = /\b([OPQ][0-9][A-Z0-9]{3}[0-9](?:-\d+)?|[A-NR-Z][0-9][A-Z][A-Z0-9]{2}[0-9](?:-\d+)?)\b/i;
+const pdbIdPattern = /\b([0-9][A-Z0-9]{3})\b/i;
 const standardAminoAcids = 'ACDEFGHIKLMNPQRSTVWY';
 
 const aa3ToAa1: Record<string, string> = {
@@ -136,6 +138,21 @@ export function parseFastaHeader(headerLine: string): ParsedHeaderInfo {
     return result;
   }
 
+  const pdbPipeMatch = header.match(/^pdb\|([0-9][A-Z0-9]{3})\|(\S+)\s+(.*)$/i);
+  if (pdbPipeMatch) {
+    result.pdbId = pdbPipeMatch[1].toUpperCase();
+    result.entryName = pdbPipeMatch[2];
+    result.proteinName = pdbPipeMatch[3].trim();
+    return result;
+  }
+
+  const leadingPdbMatch = header.match(/^([0-9][A-Z0-9]{3})(?:[_\s-](.*))?$/i);
+  if (leadingPdbMatch) {
+    result.pdbId = leadingPdbMatch[1].toUpperCase();
+    result.proteinName = leadingPdbMatch[2]?.replace(/_/g, ' ').trim();
+    return result;
+  }
+
   const accMatch = header.match(uniprotAccessionPattern);
   if (accMatch) {
     result.accession = accMatch[1].toUpperCase();
@@ -144,6 +161,18 @@ export function parseFastaHeader(headerLine: string): ParsedHeaderInfo {
   }
 
   return result;
+}
+
+export function extractLookupIds(text: string): { uniprotAccessions: string[]; pdbIds: string[] } {
+  const uniprotAccessions = Array.from(new Set(
+    Array.from(text.matchAll(new RegExp(uniprotAccessionPattern.source, 'gi'))).map((match) => match[1].toUpperCase()),
+  ));
+  const pdbIds = Array.from(new Set(
+    Array.from(text.matchAll(new RegExp(pdbIdPattern.source, 'gi')))
+      .map((match) => match[1].toUpperCase())
+      .filter((id) => !uniprotAccessions.includes(id)),
+  ));
+  return { uniprotAccessions, pdbIds };
 }
 
 export function parseProteinInput(raw: string): ParsedProteinInput {

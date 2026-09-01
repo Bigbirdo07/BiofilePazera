@@ -31,6 +31,7 @@ import {
   formatPercent,
   getStructureMetricLabel,
   hasProteinProperties,
+  extractLookupIds,
   parseFastaHeader,
   parsePaeJson,
   parsePdbAtoms,
@@ -116,6 +117,8 @@ export const ProteinStudio: React.FC<ProteinStudioProps> = ({ onNavigate }) => {
   });
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [errorDetails, setErrorDetails] = useState<string | null>(null);
+  const [noticeMessage, setNoticeMessage] = useState<string | null>(null);
+  const [noticeDetails, setNoticeDetails] = useState<string | null>(null);
   const [isFastqDetected, setIsFastqDetected] = useState(false);
   const [copiedSeq, setCopiedSeq] = useState(false);
   const [copiedFasta, setCopiedFasta] = useState(false);
@@ -149,6 +152,8 @@ export const ProteinStudio: React.FC<ProteinStudioProps> = ({ onNavigate }) => {
   const clearErrors = () => {
     setErrorMessage(null);
     setErrorDetails(null);
+    setNoticeMessage(null);
+    setNoticeDetails(null);
     setMutationError(null);
     setIsFastqDetected(false);
   };
@@ -389,7 +394,17 @@ export const ProteinStudio: React.FC<ProteinStudioProps> = ({ onNavigate }) => {
     setExecutionState('loading');
     const { id } = startRequest();
     try {
+      const lookupIds = extractLookupIds(raw);
       const parsed = parseProteinInput(raw);
+      if (!raw.trim().startsWith('>') && lookupIds.uniprotAccessions.length > 0 && parsed.sequence.length > 40) {
+        const accession = lookupIds.uniprotAccessions[0];
+        setInputMode('uniprot');
+        setUniprotAccession(accession);
+        setExecutionState('idle');
+        setNoticeMessage(`UniProt accession ${accession} detected in this text file.`);
+        setNoticeDetails('Click Fetch Structure to retrieve the AlphaFold DB model online. No network request has been made.');
+        return;
+      }
       if (!parsed.sequence) throw new Error('No amino-acid sequence was found.');
       if (parsed.nucleotideWarning) {
         setErrorMessage('This sequence appears to be nucleotide DNA/RNA rather than protein amino acids.');
@@ -403,7 +418,7 @@ export const ProteinStudio: React.FC<ProteinStudioProps> = ({ onNavigate }) => {
         organism: header?.organism,
         gene: header?.gene,
         sourceType: 'SEQUENCE_ONLY',
-        sourceLabel: 'Protein Sequence',
+        sourceLabel: header?.pdbId ? `Protein Sequence · PDB ${header.pdbId}` : 'Protein Sequence',
         locationLabel: 'LOCAL',
         structureType: 'No coordinates',
         pdbText: '',
@@ -526,6 +541,17 @@ export const ProteinStudio: React.FC<ProteinStudioProps> = ({ onNavigate }) => {
               </div>
               <p className="text-rose-800 dark:text-rose-300 leading-snug">{errorMessage}</p>
               {errorDetails && <p className="text-[11px] text-rose-600 dark:text-rose-400 font-mono">{errorDetails}</p>}
+            </div>
+          )}
+
+          {noticeMessage && (
+            <div className="p-3 bg-sky-50 dark:bg-sky-950/50 border border-sky-200 dark:border-sky-800 rounded-lg text-xs space-y-1">
+              <div className="font-bold text-sky-900 dark:text-sky-200 flex items-center gap-1">
+                <Info className="w-4 h-4" />
+                <span>Input Notice</span>
+              </div>
+              <p className="text-sky-800 dark:text-sky-300 leading-snug">{noticeMessage}</p>
+              {noticeDetails && <p className="text-[11px] text-sky-700 dark:text-sky-300 font-mono">{noticeDetails}</p>}
             </div>
           )}
 

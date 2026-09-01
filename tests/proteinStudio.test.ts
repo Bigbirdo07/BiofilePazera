@@ -4,6 +4,7 @@ import {
   classifyProteinStudioInput,
   classifyStructureSource,
   describeMutation,
+  extractLookupIds,
   parsePaeJson,
   parseProteinInput,
   plddtCategory,
@@ -43,6 +44,19 @@ function testBundledProteinExamples() {
   assert.equal(multi.header?.entryName, 'INS_HUMAN');
   assert.equal(multi.sequence.length, 110);
   assert.equal(multi.records, 5);
+
+  const ubq = parseProteinInput(readFileSync('rc-test-data/BioFile_Toolkit_Scientist_Test_Pack/02_Protein_Studio/01_1UBQ_ubiquitin_reference.fasta', 'utf8'));
+  assert.equal(ubq.header?.pdbId, '1UBQ');
+  assert.equal(ubq.sequence.length, 76);
+
+  const crn = parseProteinInput(readFileSync('rc-test-data/BioFile_Toolkit_Scientist_Test_Pack/02_Protein_Studio/02_1CRN_crambin_reference.fasta', 'utf8'));
+  assert.equal(crn.header?.pdbId, '1CRN');
+  assert.equal(crn.sequence.length, 46);
+
+  const controls = extractLookupIds(readFileSync('rc-test-data/BioFile_Toolkit_Scientist_Test_Pack/02_Protein_Studio/05_online_accessions.txt', 'utf8'));
+  assert.ok(controls.uniprotAccessions.includes('P04637'));
+  assert.ok(controls.pdbIds.includes('1UBQ'));
+  assert.ok(controls.pdbIds.includes('1CRN'));
 }
 
 function testInputClassification() {
