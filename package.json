@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
+    "test:protein-studio": "node --experimental-strip-types tests/proteinStudio.test.ts",
     "preview": "vite preview",
     "tauri": "tauri"
   },

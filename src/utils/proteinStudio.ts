@@ -1,0 +1,350 @@
+import type { ProteinProperties } from '../types/bio.ts';
+
+export type InputKind = 'pdb' | 'cif' | 'fastq' | 'protein_fasta' | 'sequence_text' | 'unknown';
+export type StructureSourceType = 'EXPERIMENTAL' | 'ALPHAFOLD_PREDICTED' | 'LOCAL_UNKNOWN';
+export type PlddtCategory = 'very_high' | 'confident' | 'low' | 'very_low' | 'missing';
+
+export interface ParsedHeaderInfo {
+  headerRaw: string;
+  accession?: string;
+  entryName?: string;
+  proteinName?: string;
+  organism?: string;
+  gene?: string;
+}
+
+export interface ParsedProteinInput {
+  header?: ParsedHeaderInfo;
+  sequence: string;
+  records: number;
+  nucleotideWarning: boolean;
+}
+
+export interface ProteinAtom {
+  serial: number;
+  name: string;
+  resName: string;
+  chainID: string;
+  resSeq: number;
+  residueIndex: number;
+  aa: string;
+  x: number;
+  y: number;
+  z: number;
+  bFactor: number | null;
+}
+
+export interface PlddtSummary {
+  count: number;
+  mean: number | null;
+  veryHigh: number;
+  confident: number;
+  low: number;
+  veryLow: number;
+  lowRegions: Array<{ start: number; end: number }>;
+}
+
+export interface PaeMatrix {
+  matrix: number[][];
+  max: number;
+  size: number;
+}
+
+export interface MutationValidation {
+  ok: boolean;
+  notation?: string;
+  position?: number;
+  wildType?: string;
+  mutant?: string;
+  error?: string;
+}
+
+export interface MutationDescription {
+  notation: string;
+  wildTypeName: string;
+  mutantName: string;
+  wildTypeClass: string;
+  mutantClass: string;
+  hydropathyDelta: number;
+  massDelta: number;
+  chargeChange: string;
+  polarityChange: string;
+}
+
+const uniprotAccessionPattern = /\b([OPQ][0-9][A-Z0-9]{3}[0-9](?:-\d+)?|[A-NR-Z][0-9][A-Z][A-Z0-9]{2}[0-9](?:-\d+)?)\b/i;
+const standardAminoAcids = 'ACDEFGHIKLMNPQRSTVWY';
+
+const aa3ToAa1: Record<string, string> = {
+  ALA: 'A',
+  CYS: 'C',
+  ASP: 'D',
+  GLU: 'E',
+  PHE: 'F',
+  GLY: 'G',
+  HIS: 'H',
+  ILE: 'I',
+  LYS: 'K',
+  LEU: 'L',
+  MET: 'M',
+  ASN: 'N',
+  PRO: 'P',
+  GLN: 'Q',
+  ARG: 'R',
+  SER: 'S',
+  THR: 'T',
+  VAL: 'V',
+  TRP: 'W',
+  TYR: 'Y',
+};
+
+const aaInfo: Record<string, { name: string; className: string; hydropathy: number; mass: number; charge: string; polarity: string }> = {
+  A: { name: 'Alanine', className: 'Small hydrophobic', hydropathy: 1.8, mass: 71.0788, charge: 'neutral', polarity: 'nonpolar' },
+  C: { name: 'Cysteine', className: 'Polar sulfur-containing', hydropathy: 2.5, mass: 103.1388, charge: 'neutral', polarity: 'polar' },
+  D: { name: 'Aspartate', className: 'Acidic charged', hydropathy: -3.5, mass: 115.0886, charge: 'negative', polarity: 'polar' },
+  E: { name: 'Glutamate', className: 'Acidic charged', hydropathy: -3.5, mass: 129.1155, charge: 'negative', polarity: 'polar' },
+  F: { name: 'Phenylalanine', className: 'Aromatic hydrophobic', hydropathy: 2.8, mass: 147.1766, charge: 'neutral', polarity: 'nonpolar' },
+  G: { name: 'Glycine', className: 'Small flexible backbone', hydropathy: -0.4, mass: 57.0519, charge: 'neutral', polarity: 'nonpolar' },
+  H: { name: 'Histidine', className: 'Basic aromatic', hydropathy: -3.2, mass: 137.1411, charge: 'positive', polarity: 'polar' },
+  I: { name: 'Isoleucine', className: 'Branched hydrophobic', hydropathy: 4.5, mass: 113.1594, charge: 'neutral', polarity: 'nonpolar' },
+  K: { name: 'Lysine', className: 'Basic charged', hydropathy: -3.9, mass: 128.1741, charge: 'positive', polarity: 'polar' },
+  L: { name: 'Leucine', className: 'Branched hydrophobic', hydropathy: 3.8, mass: 113.1594, charge: 'neutral', polarity: 'nonpolar' },
+  M: { name: 'Methionine', className: 'Sulfur hydrophobic', hydropathy: 1.9, mass: 131.1926, charge: 'neutral', polarity: 'nonpolar' },
+  N: { name: 'Asparagine', className: 'Polar amide', hydropathy: -3.5, mass: 114.1038, charge: 'neutral', polarity: 'polar' },
+  P: { name: 'Proline', className: 'Cyclic imino acid', hydropathy: -1.6, mass: 97.1167, charge: 'neutral', polarity: 'nonpolar' },
+  Q: { name: 'Glutamine', className: 'Polar amide', hydropathy: -3.5, mass: 128.1307, charge: 'neutral', polarity: 'polar' },
+  R: { name: 'Arginine', className: 'Basic charged', hydropathy: -4.5, mass: 156.1875, charge: 'positive', polarity: 'polar' },
+  S: { name: 'Serine', className: 'Small polar', hydropathy: -0.8, mass: 87.0782, charge: 'neutral', polarity: 'polar' },
+  T: { name: 'Threonine', className: 'Polar hydroxyl', hydropathy: -0.7, mass: 101.1051, charge: 'neutral', polarity: 'polar' },
+  V: { name: 'Valine', className: 'Branched hydrophobic', hydropathy: 4.2, mass: 99.1326, charge: 'neutral', polarity: 'nonpolar' },
+  W: { name: 'Tryptophan', className: 'Aromatic hydrophobic', hydropathy: -0.9, mass: 186.2132, charge: 'neutral', polarity: 'nonpolar' },
+  Y: { name: 'Tyrosine', className: 'Aromatic polar', hydropathy: -1.3, mass: 163.176, charge: 'neutral', polarity: 'polar' },
+};
+
+export function parseFastaHeader(headerLine: string): ParsedHeaderInfo {
+  const result: ParsedHeaderInfo = { headerRaw: headerLine };
+  if (!headerLine.trim()) return result;
+
+  const header = headerLine.trim().replace(/^>/, '').trim();
+  const dbMatch = header.match(/^(?:sp|tr)\|([A-Z0-9]{6,10}(?:-\d+)?)\|(\S+)\s+(.*)$/i);
+  if (dbMatch) {
+    result.accession = dbMatch[1].toUpperCase();
+    result.entryName = dbMatch[2];
+    const rest = dbMatch[3];
+    result.organism = rest.match(/OS=([^=]+?)(?=\s+[A-Z]{2}=|$)/)?.[1]?.trim();
+    result.gene = rest.match(/GN=([^=]+?)(?=\s+[A-Z]{2}=|$)/)?.[1]?.trim();
+    result.proteinName = rest.split(/\s+[A-Z]{2}=/)[0]?.trim();
+    return result;
+  }
+
+  const accMatch = header.match(uniprotAccessionPattern);
+  if (accMatch) {
+    result.accession = accMatch[1].toUpperCase();
+    const withoutAccession = header.replace(accMatch[1], '').trim();
+    if (withoutAccession) result.proteinName = withoutAccession;
+  }
+
+  return result;
+}
+
+export function parseProteinInput(raw: string): ParsedProteinInput {
+  const lines = raw.split(/\r?\n/);
+  const firstHeader = lines.find((line) => line.trim().startsWith('>'));
+  const sequence = lines
+    .filter((line) => !line.trim().startsWith('>'))
+    .join('')
+    .replace(/[^A-Za-z*]/g, '')
+    .toUpperCase()
+    .replace(/\*/g, '');
+  const nucleotideLetters = (sequence.match(/[ACGTUN]/g) || []).length;
+  const nonDnaProteinLetters = (sequence.match(/[EFHIKLMNPQRSVWY]/g) || []).length;
+  return {
+    header: firstHeader ? parseFastaHeader(firstHeader) : undefined,
+    sequence,
+    records: lines.filter((line) => line.trim().startsWith('>')).length,
+    nucleotideWarning: sequence.length >= 16 && nucleotideLetters / sequence.length > 0.9 && nonDnaProteinLetters === 0,
+  };
+}
+
+export function classifyProteinStudioInput(filename: string, content = ''): InputKind {
+  const name = filename.toLowerCase();
+  const trimmed = content.trimStart();
+  if (name.endsWith('.fastq') || name.endsWith('.fq') || name.endsWith('.fastq.gz') || name.endsWith('.fq.gz')) return 'fastq';
+  if (/^@[^\n\r]+[\r\n]+[A-Za-z.~-]+[\r\n]+\+/.test(trimmed)) return 'fastq';
+  if (name.endsWith('.pdb') || name.endsWith('.ent')) return 'pdb';
+  if (name.endsWith('.cif') || name.endsWith('.mmcif')) return 'cif';
+  if (name.endsWith('.fasta') || name.endsWith('.fa') || name.endsWith('.faa')) return 'protein_fasta';
+  if (name.endsWith('.txt') && trimmed.startsWith('>')) return 'protein_fasta';
+  if (name.endsWith('.txt') && trimmed) return 'sequence_text';
+  return trimmed.startsWith('>') ? 'protein_fasta' : 'unknown';
+}
+
+export function classifyStructureSource(content: string, filename = ''): StructureSourceType {
+  const text = `${filename}\n${content}`.toUpperCase();
+  if (text.includes('ALPHAFOLD') || text.includes('AF-') || text.includes('PREDICTED MODEL')) return 'ALPHAFOLD_PREDICTED';
+  if (/(X-RAY|X-RAY DIFFRACTION|ELECTRON MICROSCOPY|CRYO-EM|SOLUTION NMR| NMR|EXPDTA)/.test(text)) return 'EXPERIMENTAL';
+  return 'LOCAL_UNKNOWN';
+}
+
+export function plddtCategory(value: number | null | undefined): PlddtCategory {
+  if (typeof value !== 'number' || Number.isNaN(value)) return 'missing';
+  if (value > 90) return 'very_high';
+  if (value >= 70) return 'confident';
+  if (value >= 50) return 'low';
+  return 'very_low';
+}
+
+export function parsePdbAtoms(pdbText: string): ProteinAtom[] {
+  const atoms: ProteinAtom[] = [];
+  const seenResidues = new Map<string, number>();
+  let residueIndex = 0;
+
+  for (const line of pdbText.split(/\r?\n/)) {
+    if (!line.startsWith('ATOM') && !line.startsWith('HETATM')) continue;
+    if (line.length < 54) continue;
+    const name = line.substring(12, 16).trim();
+    if (name !== 'CA') continue;
+
+    const chainID = line.substring(21, 22).trim() || 'A';
+    const resSeq = Number.parseInt(line.substring(22, 26).trim(), 10);
+    const resName = line.substring(17, 20).trim().toUpperCase();
+    const key = `${chainID}:${resSeq}:${resName}`;
+    if (!seenResidues.has(key)) {
+      residueIndex += 1;
+      seenResidues.set(key, residueIndex);
+    }
+
+    atoms.push({
+      serial: Number.parseInt(line.substring(6, 11).trim(), 10) || 0,
+      name,
+      resName,
+      chainID,
+      resSeq: Number.isFinite(resSeq) ? resSeq : 0,
+      residueIndex: seenResidues.get(key) || residueIndex,
+      aa: aa3ToAa1[resName] || 'X',
+      x: Number.parseFloat(line.substring(30, 38).trim()) || 0,
+      y: Number.parseFloat(line.substring(38, 46).trim()) || 0,
+      z: Number.parseFloat(line.substring(46, 54).trim()) || 0,
+      bFactor: Number.isFinite(Number.parseFloat(line.substring(60, 66).trim()))
+        ? Number.parseFloat(line.substring(60, 66).trim())
+        : null,
+    });
+  }
+
+  return atoms;
+}
+
+export function extractChainsFromAtoms(atoms: ProteinAtom[]): string[] {
+  return Array.from(new Set(atoms.map((atom) => atom.chainID).filter(Boolean))).sort();
+}
+
+export function summarizePlddt(atoms: ProteinAtom[]): PlddtSummary {
+  const values = atoms.map((atom) => atom.bFactor).filter((value): value is number => typeof value === 'number');
+  const summary: PlddtSummary = {
+    count: values.length,
+    mean: values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : null,
+    veryHigh: 0,
+    confident: 0,
+    low: 0,
+    veryLow: 0,
+    lowRegions: [],
+  };
+
+  let regionStart: number | null = null;
+  atoms.forEach((atom, idx) => {
+    const category = plddtCategory(atom.bFactor);
+    if (category === 'very_high') summary.veryHigh += 1;
+    if (category === 'confident') summary.confident += 1;
+    if (category === 'low') summary.low += 1;
+    if (category === 'very_low') summary.veryLow += 1;
+
+    const isLowConfidence = category === 'low' || category === 'very_low';
+    if (isLowConfidence && regionStart === null) regionStart = idx + 1;
+    if ((!isLowConfidence || idx === atoms.length - 1) && regionStart !== null) {
+      const end = isLowConfidence && idx === atoms.length - 1 ? idx + 1 : idx;
+      if (end - regionStart + 1 >= 3) summary.lowRegions.push({ start: regionStart, end });
+      regionStart = null;
+    }
+  });
+
+  return summary;
+}
+
+export function parsePaeJson(raw: unknown, expectedLength?: number): PaeMatrix | null {
+  const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
+  const record = Array.isArray(parsed) ? parsed[0] : parsed;
+  if (!record || typeof record !== 'object') return null;
+
+  const matrix = (record as { predicted_aligned_error?: unknown }).predicted_aligned_error;
+  const maxValue = (record as { max_predicted_aligned_error?: unknown }).max_predicted_aligned_error;
+  if (!Array.isArray(matrix) || matrix.length === 0) return null;
+  if (expectedLength && matrix.length !== expectedLength) return null;
+  if (typeof maxValue !== 'number' || !Number.isFinite(maxValue) || maxValue <= 0) return null;
+
+  const numericMatrix: number[][] = [];
+  for (const row of matrix) {
+    if (!Array.isArray(row) || row.length !== matrix.length) return null;
+    const numericRow = row.map((value) => {
+      const n = typeof value === 'number' ? value : Number(value);
+      return Number.isFinite(n) ? n : Number.NaN;
+    });
+    if (numericRow.some((value) => Number.isNaN(value) || value < 0)) return null;
+    numericMatrix.push(numericRow);
+  }
+
+  return { matrix: numericMatrix, max: maxValue, size: numericMatrix.length };
+}
+
+export function validateMutationInput(notation: string, sequence: string): MutationValidation {
+  const trimmed = notation.trim().toUpperCase();
+  const match = trimmed.match(/^([A-Z])(\d+)([A-Z])$/);
+  if (!match) return { ok: false, error: 'Use substitution notation such as F24S.' };
+  const [, wildType, positionText, mutant] = match;
+  const position = Number.parseInt(positionText, 10);
+  if (!Number.isInteger(position) || position < 1 || position > sequence.length) {
+    return { ok: false, position, wildType, mutant, error: 'Position is outside the loaded sequence.' };
+  }
+  if (!standardAminoAcids.includes(wildType) || !standardAminoAcids.includes(mutant)) {
+    return { ok: false, position, wildType, mutant, error: 'Wild type and mutant must be standard amino acids.' };
+  }
+  if (wildType === mutant) {
+    return { ok: false, position, wildType, mutant, error: 'Wild type and mutant must differ.' };
+  }
+  const observed = sequence[position - 1]?.toUpperCase();
+  if (observed !== wildType) {
+    return { ok: false, position, wildType, mutant, error: `Loaded sequence has ${observed || '-'} at position ${position}, not ${wildType}.` };
+  }
+  return { ok: true, notation: `${wildType}${position}${mutant}`, position, wildType, mutant };
+}
+
+export function describeMutation(validation: MutationValidation): MutationDescription | null {
+  if (!validation.ok || !validation.wildType || !validation.mutant || !validation.position) return null;
+  const wt = aaInfo[validation.wildType];
+  const mut = aaInfo[validation.mutant];
+  if (!wt || !mut) return null;
+  return {
+    notation: validation.notation || `${validation.wildType}${validation.position}${validation.mutant}`,
+    wildTypeName: wt.name,
+    mutantName: mut.name,
+    wildTypeClass: wt.className,
+    mutantClass: mut.className,
+    hydropathyDelta: mut.hydropathy - wt.hydropathy,
+    massDelta: mut.mass - wt.mass,
+    chargeChange: wt.charge === mut.charge ? `No charge class change (${wt.charge})` : `${wt.charge} to ${mut.charge}`,
+    polarityChange: wt.polarity === mut.polarity ? `No polarity class change (${wt.polarity})` : `${wt.polarity} to ${mut.polarity}`,
+  };
+}
+
+export function formatPercent(count: number, total: number): string {
+  if (!total) return '-';
+  return `${((count / total) * 100).toFixed(1)}%`;
+}
+
+export function getStructureMetricLabel(sourceType: StructureSourceType, chains: string[]): { label: string; value: string } {
+  if (sourceType === 'ALPHAFOLD_PREDICTED') return { label: 'STRUCTURE', value: 'AlphaFold DB' };
+  if (chains.length) return { label: 'CHAINS', value: String(chains.length) };
+  return { label: 'STRUCTURE', value: '-' };
+}
+
+export function hasProteinProperties(properties: ProteinProperties | null): properties is ProteinProperties {
+  return Boolean(properties && properties.length > 0);
+}

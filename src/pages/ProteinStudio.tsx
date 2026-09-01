@@ -1,1065 +1,979 @@
-import React, { useState, useRef } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
+import {
+  Activity,
+  AlertTriangle,
+  Check,
+  Copy,
+  Dna,
+  FileCode,
+  FileText,
+  Globe,
+  Info,
+  Layers,
+  RefreshCw,
+  RotateCcw,
+  Search,
+  ShieldCheck,
+} from 'lucide-react';
 import { PageView, ProteinProperties } from '../types/bio';
 import { calculateProteinProperties, extractFastaFromPdb } from '../services/biofileApi';
 import { FileUploader } from '../components/common/FileUploader';
 import { Pdb3DViewer } from '../components/common/Pdb3DViewer';
-
 import {
-  Activity,
-  Search,
-  Copy,
-  Check,
-  ShieldCheck,
-  RefreshCw,
-  Layers,
-  AlertTriangle,
-  FileCode,
-  Globe,
-  FileText,
-  RotateCcw,
-  Info,
-} from 'lucide-react';
+  MutationDescription,
+  PaeMatrix,
+  ProteinAtom,
+  StructureSourceType,
+  classifyProteinStudioInput,
+  classifyStructureSource,
+  describeMutation,
+  extractChainsFromAtoms,
+  formatPercent,
+  getStructureMetricLabel,
+  hasProteinProperties,
+  parseFastaHeader,
+  parsePaeJson,
+  parsePdbAtoms,
+  parseProteinInput,
+  summarizePlddt,
+  validateMutationInput,
+} from '../utils/proteinStudio';
 
-
-export interface ParsedHeaderInfo {
-  headerRaw: string;
-  accession?: string;
-  entryName?: string;
-  proteinName?: string;
-  organism?: string;
-  gene?: string;
-}
-
-export const parseFastaHeader = (headerLine: string): ParsedHeaderInfo => {
-  const result: ParsedHeaderInfo = { headerRaw: headerLine };
-  if (!headerLine || !headerLine.trim()) return result;
-
-  const line = headerLine.trim();
-  const header = line.startsWith('>') ? line.substring(1).trim() : line;
-
-  // Pattern 1: SwissProt / TrEMBL: >sp|P01308|INS_HUMAN Insulin OS=Homo sapiens OX=9606 GN=INS PE=1 SV=1
-  // Pattern 1b: >tr|A0A024RBG1|A0A024RBG1_HUMAN ...
-  const dbMatch = header.match(/^(?:sp|tr)\|([A-Z0-9]{6,10})\|(\S+)\s+(.*)$/i);
-  if (dbMatch) {
-    result.accession = dbMatch[1].toUpperCase();
-    result.entryName = dbMatch[2];
-    
-    const rest = dbMatch[3];
-    // Extract OS=Organism
-    const osMatch = rest.match(/OS=([^=]+?)(?=\s+[A-Z]{2}=|$)/);
-    if (osMatch) result.organism = osMatch[1].trim();
-
-    // Extract GN=Gene
-    const gnMatch = rest.match(/GN=([^=]+?)(?=\s+[A-Z]{2}=|$)/);
-    if (gnMatch) result.gene = gnMatch[1].trim();
-
-    // Extract Protein Name (everything before OS=)
-    const nameMatch = rest.split(/\s+[A-Z]{2}=/)[0];
-    if (nameMatch) result.proteinName = nameMatch.trim();
-
-    return result;
-  }
-
-  // Pattern 2: PDB format: >pdb|1UBQ|A Chain A, Ubiquitin
-  const pdbMatch = header.match(/^pdb\|([A-Z0-9]{4})\|(\S+)\s+(.*)$/i);
-  if (pdbMatch) {
-    result.accession = pdbMatch[1].toUpperCase();
-    result.proteinName = pdbMatch[3].trim();
-    return result;
-  }
-
-  // Pattern 3: Generic UniProt accession in header: P01308 or P04637
-  const accMatch = header.match(/\b([OPQ][0-9][A-Z0-9]{3}[0-9]|[A-N,R-Z][0-9]{5})\b/i);
-  if (accMatch) {
-    result.accession = accMatch[1].toUpperCase();
-    const parts = header.split(/\s+/);
-    if (parts.length > 1) {
-      result.proteinName = parts.slice(1).join(' ');
-    }
-  }
-
-  return result;
-};
+export { parseFastaHeader };
 
 interface ProteinStudioProps {
   onNavigate?: (view: PageView) => void;
 }
 
 type InputMode = 'structure' | 'uniprot' | 'sequence';
+type WorkspaceTab = 'structure' | 'confidence' | 'sequence' | 'mutations';
+type LoadStep = 'metadata' | 'model' | 'confidence';
 
 interface SelectedFile {
   name: string;
   size: number;
   content: string;
+  format: string;
 }
 
-interface ActiveModel {
+interface ActiveProtein {
   title: string;
   accession?: string;
-  species?: string;
+  entryName?: string;
   proteinName?: string;
-  source: 'LOCAL' | 'PDB' | 'ALPHAFOLD DB' | 'SEQUENCE';
-  sourceDetails: string;
-  isExperimental: boolean;
-  isAlphaFold: boolean;
-  pdbText?: string;
+  organism?: string;
+  gene?: string;
+  sourceType: StructureSourceType | 'SEQUENCE_ONLY';
+  sourceLabel: string;
+  locationLabel: 'LOCAL' | 'ONLINE';
+  structureType: string;
+  pdbText: string;
   sequence: string;
+  sequenceLabel: string;
   chains: string[];
+  atoms: ProteinAtom[];
 }
 
+interface AlphaFoldMetadata {
+  pdbUrl?: string;
+  paeDocUrl?: string;
+  plddtDocUrl?: string;
+  accession?: string;
+  entryName?: string;
+  proteinName?: string;
+  organism?: string;
+  gene?: string;
+  sequence?: string;
+}
+
+const insulinFasta = `>sp|P01308|INS_HUMAN Insulin OS=Homo sapiens OX=9606 GN=INS PE=1 SV=1
+MALWMRLLPLLALLALWGPDPAAAFVNQHLCGSHLVEALYLVCGERGFFYTPKTRREAED
+LQVGQVELGGGPGAGSLQPLALEGSLQKRGIVEQCCTSICSLYQLENYCN`;
 
 export const ProteinStudio: React.FC<ProteinStudioProps> = ({ onNavigate }) => {
-  // Input Mode Segmented Switch
   const [inputMode, setInputMode] = useState<InputMode>('structure');
-
-  // Input States
+  const [activeTab, setActiveTab] = useState<WorkspaceTab>('structure');
   const [structureFile, setStructureFile] = useState<SelectedFile | null>(null);
   const [sequenceFile, setSequenceFile] = useState<SelectedFile | null>(null);
-  const [uniprotAccession, setUniprotAccession] = useState<string>('P04637');
-  const [pastedSequence, setPastedSequence] = useState<string>('');
-
-  // Misrouting Guard
-  const [isFastqDetected, setIsFastqDetected] = useState<boolean>(false);
-
-  // Execution & Race Safety States
+  const [pastedSequence, setPastedSequence] = useState('');
+  const [uniprotAccession, setUniprotAccession] = useState('P04637');
+  const [activeProtein, setActiveProtein] = useState<ActiveProtein | null>(null);
+  const [properties, setProperties] = useState<ProteinProperties | null>(null);
+  const [pae, setPae] = useState<PaeMatrix | null>(null);
+  const [selectedChain, setSelectedChain] = useState('ALL');
+  const [renderMode, setRenderMode] = useState<'ribbon' | 'trace' | 'spheres'>('ribbon');
+  const [colorMode, setColorMode] = useState<'plddt' | 'chain' | 'spectrum' | 'bfactor'>('chain');
+  const [highlightedResidue, setHighlightedResidue] = useState<number | null>(null);
+  const [selectedResidue, setSelectedResidue] = useState<ProteinAtom | null>(null);
+  const [mutationNotation, setMutationNotation] = useState('');
+  const [mutationResult, setMutationResult] = useState<MutationDescription | null>(null);
+  const [mutationError, setMutationError] = useState<string | null>(null);
   const [executionState, setExecutionState] = useState<'idle' | 'loading' | 'error'>('idle');
+  const [loadSteps, setLoadSteps] = useState<Record<LoadStep, 'idle' | 'loading' | 'done' | 'error'>>({
+    metadata: 'idle',
+    model: 'idle',
+    confidence: 'idle',
+  });
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [errorDetails, setErrorDetails] = useState<string | null>(null);
-  const latestTokenRef = useRef<number>(0);
+  const [isFastqDetected, setIsFastqDetected] = useState(false);
+  const [copiedSeq, setCopiedSeq] = useState(false);
+  const [copiedFasta, setCopiedFasta] = useState(false);
+  const requestRef = useRef<{ id: number; controller?: AbortController }>({ id: 0 });
 
-  // Active Rendered Model & Results Workspace
-  const [activeModel, setActiveModel] = useState<ActiveModel | null>(null);
-  const [selectedChain, setSelectedChain] = useState<string>('ALL');
-  const [colorMode, setColorMode] = useState<'plddt' | 'chain' | 'spectrum' | 'bfactor'>('plddt');
-  const [renderMode, setRenderMode] = useState<'ribbon' | 'trace' | 'spheres'>('ribbon');
+  const isAlphaFold = activeProtein?.sourceType === 'ALPHAFOLD_PREDICTED';
+  const plddtSummary = useMemo(
+    () => (activeProtein && isAlphaFold ? summarizePlddt(activeProtein.atoms) : null),
+    [activeProtein, isAlphaFold],
+  );
+  const structureMetric = getStructureMetricLabel(
+    activeProtein?.sourceType === 'SEQUENCE_ONLY' || !activeProtein ? 'LOCAL_UNKNOWN' : activeProtein.sourceType,
+    activeProtein?.chains || [],
+  );
 
-  const [properties, setProperties] = useState<ProteinProperties | null>(null);
-  const [copiedFasta, setCopiedFasta] = useState<boolean>(false);
-  const [copiedSeq, setCopiedSeq] = useState<boolean>(false);
-
-  // Parse chains from PDB ATOM lines
-  const extractChainsFromPdb = (pdbText: string): string[] => {
-    const chainsSet = new Set<string>();
-    const lines = pdbText.split('\n');
-    for (let l of lines) {
-      if ((l.startsWith('ATOM') || l.startsWith('HETATM')) && l.length > 21) {
-        const c = l.substring(21, 22).trim();
-        if (c) chainsSet.add(c);
-      }
-    }
-    return Array.from(chainsSet).sort();
+  const startRequest = () => {
+    requestRef.current.controller?.abort();
+    const controller = new AbortController();
+    const id = requestRef.current.id + 1;
+    requestRef.current = { id, controller };
+    return { id, controller };
   };
 
-  // WORKFLOW A: LOAD A STRUCTURE (.pdb, .cif, .mmcif)
+  const isLatestRequest = (id: number) => id === requestRef.current.id;
+
+  const resetAlphaFoldState = () => {
+    setPae(null);
+    setColorMode('chain');
+  };
+
+  const clearErrors = () => {
+    setErrorMessage(null);
+    setErrorDetails(null);
+    setMutationError(null);
+    setIsFastqDetected(false);
+  };
+
+  const handleResetAnalysis = () => {
+    requestRef.current.controller?.abort();
+    requestRef.current = { id: requestRef.current.id + 1 };
+    setActiveProtein(null);
+    setProperties(null);
+    setPae(null);
+    setSelectedChain('ALL');
+    setHighlightedResidue(null);
+    setSelectedResidue(null);
+    setMutationResult(null);
+    setMutationError(null);
+    setStructureFile(null);
+    setSequenceFile(null);
+    setPastedSequence('');
+    setExecutionState('idle');
+    setLoadSteps({ metadata: 'idle', model: 'idle', confidence: 'idle' });
+    clearErrors();
+    setActiveTab('structure');
+  };
+
+  const rejectFastq = () => {
+    setIsFastqDetected(true);
+    setErrorMessage(null);
+    setErrorDetails(null);
+    setExecutionState('idle');
+    setActiveProtein(null);
+    setProperties(null);
+    resetAlphaFoldState();
+  };
+
+  const handleStructureFiles = (files: { name: string; content?: string; file?: File }[]) => {
+    const file = files[0];
+    if (!file) return;
+    const kind = classifyProteinStudioInput(file.name, file.content || '');
+    if (kind === 'fastq') {
+      setStructureFile(null);
+      rejectFastq();
+      return;
+    }
+    if (kind !== 'pdb' && kind !== 'cif') {
+      setErrorMessage('Select a PDB or mmCIF structure file.');
+      setErrorDetails('Protein Studio structure mode accepts .pdb, .cif, and .mmcif files.');
+      return;
+    }
+    setStructureFile({
+      name: file.name,
+      size: file.file?.size || file.content?.length || 0,
+      content: file.content || '',
+      format: kind === 'pdb' ? 'PDB' : 'mmCIF',
+    });
+    clearErrors();
+  };
+
+  const handleSequenceFiles = (files: { name: string; content?: string; file?: File }[]) => {
+    const file = files[0];
+    if (!file) return;
+    const kind = classifyProteinStudioInput(file.name, file.content || '');
+    if (kind === 'fastq') {
+      setSequenceFile(null);
+      rejectFastq();
+      return;
+    }
+    if (kind !== 'protein_fasta' && kind !== 'sequence_text') {
+      setErrorMessage('Select a protein FASTA or plain amino-acid text file.');
+      return;
+    }
+    setSequenceFile({
+      name: file.name,
+      size: file.file?.size || file.content?.length || 0,
+      content: file.content || '',
+      format: kind === 'protein_fasta' ? 'FASTA' : 'Text',
+    });
+    clearErrors();
+  };
+
   const handleLoadStructure = async () => {
     if (!structureFile) {
       setErrorMessage('Please select or drop a PDB/mmCIF structure file.');
       return;
     }
-    setIsFastqDetected(false);
-    setErrorMessage(null);
-    setErrorDetails(null);
+    if (!structureFile.content) {
+      setErrorMessage('Structure file content is not available.');
+      setErrorDetails('Drop the file into the panel, or use browser file selection. Native path-only selection is not readable in this build.');
+      return;
+    }
+
+    clearErrors();
+    resetAlphaFoldState();
     setExecutionState('loading');
-    const token = ++latestTokenRef.current;
-
+    const { id } = startRequest();
     try {
-      const content = structureFile.content;
-
-      // Validate structure parsing
-      if (!content.includes('ATOM') && !content.includes('HETATM')) {
-        throw new Error('No valid ATOM or HETATM atomic coordinate records found in the structure file.');
-      }
-
-      const extractedFasta = await extractFastaFromPdb(content);
-      const cleanSeq = extractedFasta.toString().replace(/>.*/g, '').replace(/\s+/g, '');
-      const chains = extractChainsFromPdb(content);
-      const isExperimental = content.includes('X-RAY') || content.includes('NMR') || content.includes('CRYO-EM') || !content.includes('ALPHAFOLD');
-
-      if (token !== latestTokenRef.current) return;
-
-      const model: ActiveModel = {
+      const sourceType = classifyStructureSource(structureFile.content, structureFile.name);
+      const atoms = parsePdbAtoms(structureFile.content);
+      if (!atoms.length) throw new Error('No C-alpha ATOM records were found. True mmCIF coordinate parsing is not available in this RC.');
+      const sequence = atoms.map((atom) => atom.aa).join('');
+      if (!isLatestRequest(id)) return;
+      const chains = extractChainsFromAtoms(atoms);
+      const protein: ActiveProtein = {
         title: structureFile.name,
-        source: 'PDB',
-        sourceDetails: isExperimental ? 'Experimental Structure (X-Ray / Cryo-EM)' : 'Local Structure File',
-        isExperimental,
-        isAlphaFold: !isExperimental,
-        pdbText: content,
-        sequence: cleanSeq,
-        chains: chains.length > 0 ? chains : ['A'],
+        sourceType,
+        sourceLabel: sourceType === 'EXPERIMENTAL' ? 'Experimental Structure' : 'Local Structure',
+        locationLabel: 'LOCAL',
+        structureType: sourceType === 'EXPERIMENTAL' ? 'Experimental / deposited coordinates' : 'Local coordinate file',
+        pdbText: structureFile.content,
+        sequence,
+        sequenceLabel: 'Observed structure-derived sequence',
+        chains,
+        atoms,
       };
-
-      setActiveModel(model);
+      setActiveProtein(protein);
       setSelectedChain('ALL');
-      setColorMode(isExperimental ? 'chain' : 'plddt');
-
-      const props = await calculateProteinProperties(cleanSeq);
-      if (token !== latestTokenRef.current) return;
-      setProperties(props);
+      setActiveTab('structure');
+      setColorMode(sourceType === 'ALPHAFOLD_PREDICTED' ? 'plddt' : 'chain');
+      setProperties(await calculateProteinProperties(sequence));
+      if (!isLatestRequest(id)) return;
       setExecutionState('idle');
-    } catch (err: any) {
-      if (token !== latestTokenRef.current) return;
+    } catch (err) {
+      if (!isLatestRequest(id)) return;
       setExecutionState('error');
-      setErrorMessage('The structure file could not be parsed.');
-      setErrorDetails(err?.message || 'Unknown structure parsing error');
+      setErrorMessage('Structure could not be parsed.');
+      setErrorDetails(err instanceof Error ? err.message : 'Unknown structure parsing error.');
     }
   };
 
-  // WORKFLOW B: FETCH UNIPROT ALPHAFOLD DB STRUCTURE
+  const normalizeAlphaFoldMetadata = (data: unknown, accession: string): AlphaFoldMetadata | null => {
+    if (!Array.isArray(data) || !data.length) return null;
+    const exact = data.find((item) => item?.uniprotAccession?.toUpperCase() === accession);
+    const item = exact || data[0];
+    return {
+      pdbUrl: item.pdbUrl,
+      paeDocUrl: item.paeDocUrl,
+      plddtDocUrl: item.plddtDocUrl,
+      accession: item.uniprotAccession || accession,
+      entryName: item.uniprotId,
+      proteinName: item.uniprotDescription,
+      organism: item.organismScientificName,
+      gene: item.gene,
+      sequence: item.sequence || item.uniprotSequence,
+    };
+  };
+
   const handleFetchUniProt = async (overrideAccession?: string) => {
-    const targetId = (overrideAccession || uniprotAccession).trim().toUpperCase();
-    if (!targetId) {
-      setErrorMessage('Please enter a valid UniProt accession ID.');
-      return;
-    }
-
-    // Validate accession format
-    const isAccValid = /^[A-Z0-9]{6,10}$/i.test(targetId);
-    if (!isAccValid) {
+    const accession = (overrideAccession || activeProtein?.accession || uniprotAccession).trim().toUpperCase();
+    if (!/^[A-Z0-9]{6,10}(?:-\d+)?$/.test(accession)) {
       setExecutionState('error');
-      setErrorMessage(`"${targetId}" is not recognized as a valid UniProt accession format.`);
-      setErrorDetails('UniProt accessions usually consist of 6 to 10 alphanumeric characters (e.g. P04637, P01308).');
+      setErrorMessage(`"${accession}" is not recognized as a valid UniProt accession format.`);
+      setErrorDetails('Examples: P01308, P04637, P0DTC2.');
       return;
     }
 
-    setErrorMessage(null);
-    setErrorDetails(null);
+    clearErrors();
     setExecutionState('loading');
-    const token = ++latestTokenRef.current;
+    setLoadSteps({ metadata: 'loading', model: 'idle', confidence: 'idle' });
+    resetAlphaFoldState();
+    setUniprotAccession(accession);
+    const { id, controller } = startRequest();
 
     try {
-      // 1. Query AlphaFold DB API to resolve exact PDB URL and metadata
-      let pdbUrl = `https://alphafold.ebi.ac.uk/files/AF-${targetId}-F1-model_v6.pdb`;
-      let metaOrganism = '';
-      let metaDescription = '';
+      const apiRes = await fetch(`https://alphafold.ebi.ac.uk/api/prediction/${accession}`, { signal: controller.signal });
+      if (!apiRes.ok) throw new Error(`AlphaFold DB metadata request failed with HTTP ${apiRes.status}.`);
+      const metadata = normalizeAlphaFoldMetadata(await apiRes.json(), accession);
+      if (!metadata?.pdbUrl) throw new Error(`No AlphaFold DB model found for accession "${accession}".`);
+      if (!isLatestRequest(id)) return;
+      setLoadSteps({ metadata: 'done', model: 'loading', confidence: 'idle' });
 
-      try {
-        const apiRes = await fetch(`https://alphafold.ebi.ac.uk/api/prediction/${targetId}`);
-        if (apiRes.ok) {
-          const apiData = await apiRes.json();
-          if (Array.isArray(apiData) && apiData.length > 0) {
-            const item = apiData[0];
-            if (item.pdbUrl) pdbUrl = item.pdbUrl;
-            if (item.organismScientificName) metaOrganism = item.organismScientificName;
-            if (item.uniprotDescription) metaDescription = item.uniprotDescription;
-          }
+      const pdbRes = await fetch(metadata.pdbUrl, { signal: controller.signal });
+      if (!pdbRes.ok) throw new Error(`AlphaFold DB model request failed with HTTP ${pdbRes.status}.`);
+      const pdbText = await pdbRes.text();
+      const atoms = parsePdbAtoms(pdbText);
+      const sequence = metadata.sequence || (await extractFastaFromPdb(pdbText)).toString().replace(/>.*/g, '').replace(/\s+/g, '');
+      if (!atoms.length) throw new Error('AlphaFold DB model did not contain readable C-alpha coordinates.');
+      if (!isLatestRequest(id)) return;
+      setLoadSteps({ metadata: 'done', model: 'done', confidence: 'loading' });
+
+      let parsedPae: PaeMatrix | null = null;
+      if (metadata.paeDocUrl) {
+        try {
+          const paeRes = await fetch(metadata.paeDocUrl, { signal: controller.signal });
+          if (paeRes.ok) parsedPae = parsePaeJson(await paeRes.text(), sequence.length);
+        } catch {
+          parsedPae = null;
         }
-      } catch (_e) {
-        // Fallback to static URL if API search fails
       }
 
-      let response = await fetch(pdbUrl);
-      
-      // Secondary Fallback to v4
-      if (!response.ok) {
-        pdbUrl = `https://alphafold.ebi.ac.uk/files/AF-${targetId}-F1-model_v4.pdb`;
-        response = await fetch(pdbUrl);
-      }
-
-      if (!response.ok) {
-        throw new Error(`No AlphaFold DB structure model found for accession "${targetId}". HTTP Status ${response.status}`);
-      }
-
-      const pdbText = await response.text();
-      const extractedFasta = await extractFastaFromPdb(pdbText);
-      const cleanSeq = extractedFasta.toString().replace(/>.*/g, '').replace(/\s+/g, '');
-      const chains = extractChainsFromPdb(pdbText);
-
-      if (token !== latestTokenRef.current) return;
-
-      const speciesText = metaOrganism
-        ? `${metaDescription ? metaDescription + ' · ' : ''}${metaOrganism}`
-        : targetId === 'P04637'
-        ? 'Cellular tumor antigen p53 · Homo sapiens'
-        : targetId === 'P01308'
-        ? 'Insulin · Homo sapiens'
-        : targetId === 'P0DTC2'
-        ? 'Spike glycoprotein · SARS-CoV-2'
-        : 'Organism Metadata via AlphaFold DB';
-
-      const model: ActiveModel = {
-        title: `UniProt Accession ${targetId}`,
-        accession: targetId,
-        species: speciesText,
-        proteinName: metaDescription || 'Protein Structure',
-        source: 'ALPHAFOLD DB',
-        sourceDetails: 'AlphaFold DB • ONLINE Model',
-        isExperimental: false,
-        isAlphaFold: true,
+      if (!isLatestRequest(id)) return;
+      const chains = extractChainsFromAtoms(atoms);
+      setActiveProtein({
+        title: metadata.accession || accession,
+        accession: metadata.accession || accession,
+        entryName: metadata.entryName,
+        proteinName: metadata.proteinName,
+        organism: metadata.organism,
+        gene: metadata.gene,
+        sourceType: 'ALPHAFOLD_PREDICTED',
+        sourceLabel: 'AlphaFold DB',
+        locationLabel: 'ONLINE',
+        structureType: 'Predicted Structure',
         pdbText,
-        sequence: cleanSeq,
-        chains: chains.length > 0 ? chains : ['A'],
-      };
-
-      setActiveModel(model);
-      setSelectedChain('ALL');
+        sequence,
+        sequenceLabel: 'UniProt sequence associated with AlphaFold DB model',
+        chains,
+        atoms,
+      });
+      setPae(parsedPae);
+      setProperties(await calculateProteinProperties(sequence));
       setColorMode('plddt');
-
-      const props = await calculateProteinProperties(cleanSeq);
-      if (token !== latestTokenRef.current) return;
-      setProperties(props);
+      setSelectedChain('ALL');
+      setActiveTab('structure');
+      setLoadSteps({ metadata: 'done', model: 'done', confidence: parsedPae ? 'done' : 'error' });
       setExecutionState('idle');
-    } catch (err: any) {
-
-      if (token !== latestTokenRef.current) return;
+    } catch (err) {
+      if ((err as Error).name === 'AbortError' || !isLatestRequest(id)) return;
       setExecutionState('error');
-      setErrorMessage('AlphaFold DB structure lookup failed.');
-      setErrorDetails(err?.message || 'Network request failed or accession model unavailable.');
+      setLoadSteps((prev) => ({ ...prev, metadata: prev.metadata === 'loading' ? 'error' : prev.metadata, model: prev.model === 'loading' ? 'error' : prev.model }));
+      setErrorMessage('No AlphaFold DB model found or retrieval failed.');
+      setErrorDetails(err instanceof Error ? err.message : 'Network request failed.');
     }
   };
 
-  // WORKFLOW C: ANALYZE A PROTEIN SEQUENCE (FASTA / Raw)
   const handleAnalyzeSequence = async () => {
-    const rawContent = sequenceFile?.content || pastedSequence;
-    if (!rawContent.trim()) {
+    const raw = sequenceFile?.content || pastedSequence;
+    if (!raw.trim()) {
       setErrorMessage('Please upload a FASTA file or paste an amino-acid sequence.');
       return;
     }
+    if (classifyProteinStudioInput(sequenceFile?.name || 'sequence.txt', raw) === 'fastq') {
+      rejectFastq();
+      return;
+    }
 
-    setErrorMessage(null);
-    setErrorDetails(null);
+    clearErrors();
+    resetAlphaFoldState();
     setExecutionState('loading');
-    const token = ++latestTokenRef.current;
-
+    const { id } = startRequest();
     try {
-      const cleanSeq = rawContent.replace(/>.*/g, '').replace(/[^A-Z]/gi, '').toUpperCase();
-
-      if (!cleanSeq) {
-        throw new Error('No valid amino-acid characters found in sequence input.');
+      const parsed = parseProteinInput(raw);
+      if (!parsed.sequence) throw new Error('No amino-acid sequence was found.');
+      if (parsed.nucleotideWarning) {
+        setErrorMessage('This sequence appears to be nucleotide DNA/RNA rather than protein amino acids.');
       }
-
-      // Check for ambiguous DNA letter sequences (e.g. sequence containing only A, C, G, T)
-      const dnaBaseCount = (cleanSeq.match(/[ACGT]/g) || []).length;
-      if (cleanSeq.length > 15 && dnaBaseCount / cleanSeq.length > 0.95) {
-        setErrorMessage('Warning: This sequence appears to be nucleotide DNA (A, C, G, T) rather than protein amino acids.');
-      }
-
-      if (token !== latestTokenRef.current) return;
-
-      const firstLine = rawContent.split('\n')[0] || '';
-      const parsedHeader = parseFastaHeader(firstLine);
-
-      const displayTitle = parsedHeader.accession && parsedHeader.proteinName
-        ? `${parsedHeader.accession} · ${parsedHeader.entryName || parsedHeader.proteinName}`
-        : parsedHeader.accession
-        ? `UniProt ${parsedHeader.accession}`
-        : sequenceFile
-        ? sequenceFile.name
-        : 'Analyzed Protein Sequence';
-
-      const model: ActiveModel = {
-        title: displayTitle,
-        accession: parsedHeader.accession,
-        species: parsedHeader.organism || (parsedHeader.proteinName ? `${parsedHeader.proteinName} · Homo sapiens` : undefined),
-        proteinName: parsedHeader.proteinName,
-        source: 'SEQUENCE',
-        sourceDetails: parsedHeader.accession
-          ? `Sequence Loaded (AlphaFold DB ${parsedHeader.accession} available)`
-          : 'Sequence Analysis (No 3D Coordinates)',
-        isExperimental: false,
-        isAlphaFold: false,
-        pdbText: '', // Empty 3D coordinates triggers informative empty state or 3D STRUCTURE AVAILABLE callout
-        sequence: cleanSeq,
-        chains: ['Sequence-derived'],
-      };
-
-      setActiveModel(model);
-      setSelectedChain('ALL');
-
-
-      const props = await calculateProteinProperties(cleanSeq);
-      if (token !== latestTokenRef.current) return;
-      setProperties(props);
+      const header = parsed.header;
+      setActiveProtein({
+        title: header?.accession ? `${header.accession} · ${header.entryName || header.proteinName || 'Protein sequence'}` : sequenceFile?.name || 'Analyzed Protein Sequence',
+        accession: header?.accession,
+        entryName: header?.entryName,
+        proteinName: header?.proteinName,
+        organism: header?.organism,
+        gene: header?.gene,
+        sourceType: 'SEQUENCE_ONLY',
+        sourceLabel: 'Protein Sequence',
+        locationLabel: 'LOCAL',
+        structureType: 'No coordinates',
+        pdbText: '',
+        sequence: parsed.sequence,
+        sequenceLabel: 'Sequence-only amino-acid input',
+        chains: [],
+        atoms: [],
+      });
+      setProperties(await calculateProteinProperties(parsed.sequence));
+      if (!isLatestRequest(id)) return;
+      setActiveTab('structure');
       setExecutionState('idle');
-    } catch (err: any) {
-      if (token !== latestTokenRef.current) return;
+    } catch (err) {
+      if (!isLatestRequest(id)) return;
       setExecutionState('error');
       setErrorMessage('Invalid FASTA or amino-acid sequence input.');
-      setErrorDetails(err?.message || 'Unable to parse sequence data');
+      setErrorDetails(err instanceof Error ? err.message : 'Unable to parse sequence input.');
     }
   };
 
-  // Reset / Clear handler
-  const handleResetAnalysis = () => {
-    setActiveModel(null);
-    setProperties(null);
-    setStructureFile(null);
-    setSequenceFile(null);
-    setPastedSequence('');
-    setIsFastqDetected(false);
-    setErrorMessage(null);
-    setErrorDetails(null);
-    setExecutionState('idle');
+  const handleMutationInspect = () => {
+    if (!activeProtein) return;
+    const validation = validateMutationInput(mutationNotation, activeProtein.sequence);
+    if (!validation.ok) {
+      setMutationResult(null);
+      setMutationError(validation.error || 'Invalid mutation.');
+      return;
+    }
+    const description = describeMutation(validation);
+    setMutationError(null);
+    setMutationResult(description);
+    setHighlightedResidue(validation.position || null);
   };
 
-  const handleCopyFastaText = () => {
-    if (!activeModel) return;
-    const fasta = `>${activeModel.title}\n${activeModel.sequence}`;
-    navigator.clipboard.writeText(fasta);
-    setCopiedFasta(true);
-    setTimeout(() => setCopiedFasta(false), 2000);
-  };
-
-  const handleCopyRawSeq = () => {
-    if (!activeModel) return;
-    navigator.clipboard.writeText(activeModel.sequence);
-    setCopiedSeq(true);
-    setTimeout(() => setCopiedSeq(false), 2000);
+  const copySequence = (asFasta: boolean) => {
+    if (!activeProtein) return;
+    navigator.clipboard.writeText(asFasta ? `>${activeProtein.title}\n${activeProtein.sequence}` : activeProtein.sequence);
+    if (asFasta) {
+      setCopiedFasta(true);
+      setTimeout(() => setCopiedFasta(false), 1600);
+    } else {
+      setCopiedSeq(true);
+      setTimeout(() => setCopiedSeq(false), 1600);
+    }
   };
 
   return (
     <div className="w-full px-4 sm:px-5 lg:px-6 xl:px-8 py-6 space-y-6">
-      {/* Header Bar */}
-      <div className="border-b border-slate-200 dark:border-slate-800 pb-4 flex items-center justify-between">
+      <div className="border-b border-slate-200 dark:border-slate-800 pb-4 flex flex-col lg:flex-row lg:items-center justify-between gap-3">
         <div>
           <h2 className="text-2xl font-bold text-slate-900 dark:text-slate-100 flex items-center space-x-2">
             <Activity className="w-6 h-6 text-sky-600 dark:text-sky-400" />
             <span>Protein Studio</span>
           </h2>
           <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
-            Load atomic structures, query predicted AlphaFold DB models, or calculate sequence-derived physicochemical properties.
+            Structure visualization, sequence-derived properties, and AlphaFold DB uncertainty interpretation.
           </p>
         </div>
-
-        <div className="flex items-center space-x-3">
-          {activeModel && (
-            <button
-              onClick={handleResetAnalysis}
-              className="px-3 py-1.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-700 dark:text-slate-300 rounded-lg text-xs font-semibold flex items-center space-x-1.5 cursor-pointer"
-            >
+        <div className="flex items-center gap-2">
+          {activeProtein && (
+            <button onClick={handleResetAnalysis} className="px-3 py-1.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 rounded-lg text-xs font-semibold flex items-center gap-1.5">
               <RotateCcw className="w-3.5 h-3.5" />
               <span>New Analysis</span>
             </button>
           )}
-          <div className="text-xs text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800 px-3 py-1.5 rounded-lg flex items-center space-x-1.5 font-medium">
+          <div className="text-xs text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800 px-3 py-1.5 rounded-lg flex items-center gap-1.5 font-medium">
             <ShieldCheck className="w-4 h-4" />
             <span>Scientific Workstation</span>
           </div>
         </div>
       </div>
 
-      {/* Main 2-Column Scientific Workstation Layout */}
       <div className="grid grid-cols-1 lg:grid-cols-[350px_minmax(0,1fr)] xl:grid-cols-[380px_minmax(0,1fr)] gap-6">
-        
-        {/* LEFT PANEL: INPUT CONTROL SIDEBAR (fixed 350-380px on desktop) */}
-        <div className="min-w-0 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-5 shadow-xs space-y-5 flex flex-col justify-between">
-          <div className="space-y-4">
-            
-            {/* Sidebar Title & Segmented Mode Selector */}
-            <div className="space-y-3">
-              <h3 className="font-bold text-slate-900 dark:text-slate-100 text-sm flex items-center space-x-2">
-                <FileCode className="w-4 h-4 text-sky-600" />
-                <span>Input</span>
-              </h3>
-
-              {/* 3 Segmented Mode Tabs */}
-              <div className="grid grid-cols-3 gap-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-lg text-xs font-semibold text-slate-600 dark:text-slate-300">
+        <aside className="min-w-0 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-5 shadow-xs space-y-5">
+          <div className="space-y-3">
+            <h3 className="font-bold text-slate-900 dark:text-slate-100 text-sm flex items-center gap-2">
+              <FileCode className="w-4 h-4 text-sky-600" />
+              <span>Input</span>
+            </h3>
+            <div className="grid grid-cols-3 gap-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-lg text-xs font-semibold">
+              {[
+                ['structure', 'Structure File'],
+                ['uniprot', 'UniProt'],
+                ['sequence', 'Protein Sequence'],
+              ].map(([mode, label]) => (
                 <button
+                  key={mode}
                   onClick={() => {
-                    setInputMode('structure');
-                    setIsFastqDetected(false);
-                    setErrorMessage(null);
+                    setInputMode(mode as InputMode);
+                    clearErrors();
                   }}
-                  className={`py-1.5 rounded-md text-[11px] transition-all cursor-pointer ${
-                    inputMode === 'structure' ? 'bg-white dark:bg-slate-900 text-sky-600 dark:text-sky-400 shadow-xs font-bold' : 'hover:text-slate-900'
-                  }`}
+                  className={`py-1.5 rounded-md text-[11px] transition-all ${inputMode === mode ? 'bg-white dark:bg-slate-900 text-sky-600 dark:text-sky-400 shadow-xs font-bold' : 'text-slate-600 dark:text-slate-300 hover:text-slate-900'}`}
                 >
-                  Structure File
+                  {label}
                 </button>
-                <button
-                  onClick={() => {
-                    setInputMode('uniprot');
-                    setIsFastqDetected(false);
-                    setErrorMessage(null);
-                  }}
-                  className={`py-1.5 rounded-md text-[11px] transition-all cursor-pointer ${
-                    inputMode === 'uniprot' ? 'bg-white dark:bg-slate-900 text-sky-600 dark:text-sky-400 shadow-xs font-bold' : 'hover:text-slate-900'
-                  }`}
-                >
-                  UniProt
-                </button>
-                <button
-                  onClick={() => {
-                    setInputMode('sequence');
-                    setIsFastqDetected(false);
-                    setErrorMessage(null);
-                  }}
-                  className={`py-1.5 rounded-md text-[11px] transition-all cursor-pointer ${
-                    inputMode === 'sequence' ? 'bg-white dark:bg-slate-900 text-sky-600 dark:text-sky-400 shadow-xs font-bold' : 'hover:text-slate-900'
-                  }`}
-                >
-                  Sequence
-                </button>
-              </div>
+              ))}
             </div>
-
-            {/* ERROR / WARNING MESSAGES */}
-            {errorMessage && (
-              <div className="p-3 bg-rose-50 dark:bg-rose-950/60 border border-rose-200 dark:border-rose-800 rounded-lg text-xs space-y-1">
-                <div className="font-bold text-rose-900 dark:text-rose-200 flex items-center space-x-1">
-                  <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
-                  <span>Input Error</span>
-                </div>
-                <p className="text-rose-800 dark:text-rose-300 leading-snug">{errorMessage}</p>
-                {errorDetails && <p className="text-[11px] text-rose-600 dark:text-rose-400 font-mono mt-1">{errorDetails}</p>}
-              </div>
-            )}
-
-            {/* FASTQ MISROUTING GUARD ALERT */}
-            {isFastqDetected && (
-              <div className="p-4 bg-amber-50 dark:bg-amber-950/60 border border-amber-200 dark:border-amber-800 rounded-xl space-y-3">
-                <div className="flex items-center space-x-2 text-amber-900 dark:text-amber-200 font-bold text-xs">
-                  <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
-                  <span>FASTQ detected</span>
-                </div>
-                <p className="text-xs text-amber-800 dark:text-amber-300 leading-relaxed">
-                  FASTQ contains sequencing reads rather than a protein structure.
-                </p>
-                <button
-                  onClick={() => onNavigate?.('inspect')}
-                  className="w-full py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-xs font-bold transition-all cursor-pointer shadow-xs"
-                >
-                  Open in Sequencing QC
-                </button>
-              </div>
-            )}
-
-            {/* MODE 1: STRUCTURE FILE (.pdb, .cif, .mmcif) */}
-            {inputMode === 'structure' && (
-              <div className="space-y-4 pt-1">
-                <div className="space-y-1">
-                  <h4 className="text-xs font-bold text-slate-800 dark:text-slate-200 uppercase">Structure File</h4>
-                  <p className="text-[11px] text-slate-500">Load local experimental 3D atomic coordinates.</p>
-                </div>
-
-                <FileUploader
-                  accept=".pdb,.cif,.mmcif,.ent"
-                  label="Drop PDB or mmCIF structure file (.pdb, .cif, .mmcif)"
-                  onFileSelected={(files) => {
-                    if (files.length > 0) {
-                      const f = files[0];
-                      // FASTQ Check
-                      if (f.name.endsWith('.fastq') || f.name.endsWith('.fq') || f.name.endsWith('.gz') || f.content?.startsWith('@')) {
-                        setIsFastqDetected(true);
-                        setStructureFile(null);
-                        return;
-                      }
-                      setIsFastqDetected(false);
-                      setStructureFile({
-                        name: f.name,
-                        size: f.content ? f.content.length : 0,
-                        content: f.content || '',
-                      });
-                    }
-                  }}
-                />
-
-                {structureFile && (
-                  <div className="p-3 bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-lg flex items-center justify-between text-xs">
-                    <div>
-                      <div className="font-bold text-slate-900 dark:text-slate-100 font-mono truncate max-w-[200px]">{structureFile.name}</div>
-                      <div className="text-[10px] text-slate-500 font-mono">{(structureFile.size / 1024).toFixed(1)} KB • PDB Structure</div>
-                    </div>
-                    <button
-                      onClick={() => setStructureFile(null)}
-                      className="text-rose-600 hover:underline text-xs font-semibold cursor-pointer"
-                    >
-                      Remove
-                    </button>
-                  </div>
-                )}
-
-                <button
-                  disabled={!structureFile || executionState === 'loading'}
-                  onClick={handleLoadStructure}
-                  className="w-full py-2.5 bg-sky-600 hover:bg-sky-700 text-white rounded-lg text-xs font-bold transition-all cursor-pointer shadow-sm disabled:opacity-50 flex items-center justify-center space-x-2"
-                >
-                  {executionState === 'loading' ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Layers className="w-4 h-4" />}
-                  <span>{executionState === 'loading' ? 'Loading Structure...' : 'Load Structure'}</span>
-                </button>
-              </div>
-            )}
-
-            {/* MODE 2: UNIPROT ALPHAFOLD DB LOOKUP */}
-            {inputMode === 'uniprot' && (
-              <div className="space-y-4 pt-1">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h4 className="text-xs font-bold text-slate-800 dark:text-slate-200 uppercase">UniProt / AlphaFold DB</h4>
-                    <p className="text-[11px] text-slate-500 mt-0.5">Fetch predicted structure from AlphaFold DB.</p>
-                  </div>
-                  <span className="text-[10px] font-bold text-sky-600 dark:text-sky-400 bg-sky-50 dark:bg-sky-950 border border-sky-200 dark:border-sky-800 px-2 py-0.5 rounded flex items-center space-x-1">
-                    <Globe className="w-3 h-3" />
-                    <span>ONLINE</span>
-                  </span>
-                </div>
-
-                <div className="space-y-1.5">
-                  <label className="text-[11px] font-semibold text-slate-700 dark:text-slate-300">UniProt accession</label>
-                  <input
-                    type="text"
-                    value={uniprotAccession}
-                    onChange={(e) => setUniprotAccession(e.target.value)}
-                    placeholder="e.g. P04637, P01308, P0DTC2"
-                    className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg p-2.5 text-xs font-mono font-bold text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-sky-500"
-                  />
-                </div>
-
-                {/* Example Accession Buttons */}
-                <div className="text-[11px] space-y-1">
-                  <span className="text-slate-500 block">Try:</span>
-                  <div className="flex flex-wrap gap-1.5">
-                    <button
-                      onClick={() => {
-                        setUniprotAccession('P01308');
-                        handleFetchUniProt('P01308');
-                      }}
-                      className="px-2 py-1 bg-slate-100 dark:bg-slate-800 hover:bg-sky-50 text-slate-700 dark:text-slate-300 rounded font-mono text-[11px] cursor-pointer"
-                    >
-                      P01308 (Insulin)
-                    </button>
-                    <button
-                      onClick={() => {
-                        setUniprotAccession('P04637');
-                        handleFetchUniProt('P04637');
-                      }}
-                      className="px-2 py-1 bg-slate-100 dark:bg-slate-800 hover:bg-sky-50 text-slate-700 dark:text-slate-300 rounded font-mono text-[11px] cursor-pointer"
-                    >
-                      P04637 (p53)
-                    </button>
-                    <button
-                      onClick={() => {
-                        setUniprotAccession('P0DTC2');
-                        handleFetchUniProt('P0DTC2');
-                      }}
-                      className="px-2 py-1 bg-slate-100 dark:bg-slate-800 hover:bg-sky-50 text-slate-700 dark:text-slate-300 rounded font-mono text-[11px] cursor-pointer"
-                    >
-                      P0DTC2 (Spike)
-                    </button>
-                  </div>
-                </div>
-
-                <button
-                  disabled={!uniprotAccession.trim() || executionState === 'loading'}
-                  onClick={() => handleFetchUniProt()}
-                  className="w-full py-2.5 bg-sky-600 hover:bg-sky-700 text-white rounded-lg text-xs font-bold transition-all cursor-pointer shadow-sm disabled:opacity-50 flex items-center justify-center space-x-2"
-                >
-                  {executionState === 'loading' ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
-                  <span>{executionState === 'loading' ? 'Fetching AlphaFold DB...' : 'Fetch AlphaFold DB Structure'}</span>
-                </button>
-              </div>
-            )}
-
-            {/* MODE 3: PROTEIN SEQUENCE (.fasta, .fa, .txt or paste) */}
-            {inputMode === 'sequence' && (
-              <div className="space-y-4 pt-1">
-                <div className="space-y-1">
-                  <h4 className="text-xs font-bold text-slate-800 dark:text-slate-200 uppercase">Protein Sequence</h4>
-                  <p className="text-[11px] text-slate-500">Calculate physicochemical properties from sequence.</p>
-                </div>
-
-                <FileUploader
-                  accept=".fasta,.fa,.faa,.txt"
-                  label="Drop FASTA file (.fasta, .fa, .faa, .txt)"
-                  onFileSelected={(files) => {
-                    if (files.length > 0) {
-                      const f = files[0];
-                      if (f.name.endsWith('.fastq') || f.name.endsWith('.fq') || f.content?.startsWith('@')) {
-                        setIsFastqDetected(true);
-                        setSequenceFile(null);
-                        return;
-                      }
-                      setIsFastqDetected(false);
-                      setSequenceFile({
-                        name: f.name,
-                        size: f.content ? f.content.length : 0,
-                        content: f.content || '',
-                      });
-                    }
-                  }}
-                />
-
-                {sequenceFile && (
-                  <div className="p-2.5 bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-lg flex items-center justify-between text-xs">
-                    <span className="font-bold font-mono text-slate-800 dark:text-slate-200 truncate max-w-[200px]">{sequenceFile.name}</span>
-                    <button onClick={() => setSequenceFile(null)} className="text-rose-600 hover:underline text-[11px] font-semibold cursor-pointer">Remove</button>
-                  </div>
-                )}
-
-                <div className="space-y-1">
-                  <label className="text-[11px] font-semibold text-slate-700 dark:text-slate-300">Or paste amino-acid sequence</label>
-                  <textarea
-                    value={pastedSequence}
-                    onChange={(e) => setPastedSequence(e.target.value)}
-                    placeholder="Paste sequence (e.g. >protein\nMEEPQSDPSV...)"
-                    className="w-full h-24 p-2.5 font-mono text-xs bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-500 text-slate-800 dark:text-slate-200"
-                  />
-                </div>
-
-                <div className="p-2.5 bg-slate-50 dark:bg-slate-800/50 rounded-lg text-[11px] text-slate-500 leading-relaxed">
-                  Note: Sequence analysis calculates protein properties without fabricating 3D coordinates.
-                </div>
-
-                <button
-                  disabled={(!sequenceFile && !pastedSequence.trim()) || executionState === 'loading'}
-                  onClick={handleAnalyzeSequence}
-                  className="w-full py-2.5 bg-sky-600 hover:bg-sky-700 text-white rounded-lg text-xs font-bold transition-all cursor-pointer shadow-sm disabled:opacity-50 flex items-center justify-center space-x-2"
-                >
-                  {executionState === 'loading' ? <RefreshCw className="w-4 h-4 animate-spin" /> : <FileText className="w-4 h-4" />}
-                  <span>{executionState === 'loading' ? 'Analyzing Sequence...' : 'Analyze Sequence'}</span>
-                </button>
-              </div>
-            )}
-
           </div>
 
-          {/* Footer Method Badge */}
-          <div className="pt-3 border-t border-slate-100 dark:border-slate-800 text-[11px] text-slate-400 font-mono flex items-center justify-between">
-            <span>Method Scope: Single Action Execution</span>
-            <span className="text-slate-500">v1.0.0-rc.1</span>
-          </div>
-
-        </div>
-
-        {/* RIGHT PANEL: MAIN SCIENTIFIC WORKSPACE */}
-        <div className="min-w-0 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-6 shadow-xs space-y-6 flex flex-col justify-between">
-          
-          {/* STATE A: EMPTY STATE BEFORE SUBMISSION */}
-          {!activeModel && (
-            <div className="space-y-6">
-              <div className="border-b border-slate-100 dark:border-slate-800 pb-3">
-                <h3 className="font-bold text-slate-900 dark:text-slate-100 text-lg">Protein Studio</h3>
-                <p className="text-xs text-slate-500 mt-1">Load a structure, enter a UniProt accession, or analyze a protein sequence.</p>
+          {isFastqDetected && (
+            <div className="p-4 bg-amber-50 dark:bg-amber-950/60 border border-amber-200 dark:border-amber-800 rounded-lg space-y-3">
+              <div className="flex items-center gap-2 text-amber-900 dark:text-amber-200 font-bold text-xs">
+                <AlertTriangle className="w-4 h-4" />
+                <span>FASTQ sequencing data detected</span>
               </div>
-
-              {/* Informative 3D Canvas Placeholder */}
-              <Pdb3DViewer
-                pdbText=""
-                onFetchAlphaFoldRequested={() => {
-                  setInputMode('uniprot');
-                  setUniprotAccession('P04637');
-                }}
-              />
-
-              {/* Workflow Hints Cards */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-2">
-                <div className="p-4 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-slate-200/60 dark:border-slate-800 space-y-1">
-                  <div className="font-bold text-xs text-slate-900 dark:text-slate-100 flex items-center space-x-1.5">
-                    <Layers className="w-4 h-4 text-sky-600" />
-                    <span>PDB / mmCIF</span>
-                  </div>
-                  <p className="text-[11px] text-slate-500">Visualize known experimental 3D structures locally.</p>
-                </div>
-
-                <div className="p-4 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-slate-200/60 dark:border-slate-800 space-y-1">
-                  <div className="font-bold text-xs text-slate-900 dark:text-slate-100 flex items-center space-x-1.5">
-                    <Globe className="w-4 h-4 text-sky-600" />
-                    <span>UniProt</span>
-                  </div>
-                  <p className="text-[11px] text-slate-500">Retrieve AlphaFold DB predicted 3D models online.</p>
-                </div>
-
-                <div className="p-4 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-slate-200/60 dark:border-slate-800 space-y-1">
-                  <div className="font-bold text-xs text-slate-900 dark:text-slate-100 flex items-center space-x-1.5">
-                    <FileText className="w-4 h-4 text-sky-600" />
-                    <span>FASTA</span>
-                  </div>
-                  <p className="text-[11px] text-slate-500">Calculate sequence properties and hydropathy profiles.</p>
-                </div>
-              </div>
+              <p className="text-xs text-amber-800 dark:text-amber-300 leading-relaxed">
+                Protein Studio analyzes protein sequences and structures. Open this file in Sequencing QC instead.
+              </p>
+              <button onClick={() => onNavigate?.('inspect')} className="w-full py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-xs font-bold">
+                Open Sequencing QC
+              </button>
             </div>
           )}
 
-          {/* STATE B: ACTIVE SUBMITTED MODEL RESULTS WORKSPACE */}
-          {activeModel && (
-            <div className="space-y-6">
-              
-              {/* Active Model Header & Source Badges */}
-              <div className="flex flex-col md:flex-row md:items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-4 gap-2">
+          {errorMessage && (
+            <div className="p-3 bg-rose-50 dark:bg-rose-950/60 border border-rose-200 dark:border-rose-800 rounded-lg text-xs space-y-1">
+              <div className="font-bold text-rose-900 dark:text-rose-200 flex items-center gap-1">
+                <AlertTriangle className="w-4 h-4" />
+                <span>Input Notice</span>
+              </div>
+              <p className="text-rose-800 dark:text-rose-300 leading-snug">{errorMessage}</p>
+              {errorDetails && <p className="text-[11px] text-rose-600 dark:text-rose-400 font-mono">{errorDetails}</p>}
+            </div>
+          )}
+
+          {inputMode === 'structure' && (
+            <div className="space-y-4">
+              <div>
+                <h4 className="text-xs font-bold uppercase">Load Structure</h4>
+                <p className="text-[11px] text-slate-500 mt-1">Visualize an existing PDB coordinate file. mmCIF parsing is limited in this RC.</p>
+              </div>
+              <FileUploader accept=".pdb,.cif,.mmcif,.ent" label="Drop PDB or mmCIF" description="Supported: .pdb, .cif, .mmcif" onFileSelected={handleStructureFiles} />
+              {structureFile && <FileCard file={structureFile} onClear={() => setStructureFile(null)} />}
+              <button disabled={!structureFile || executionState === 'loading'} onClick={handleLoadStructure} className="w-full py-2.5 bg-sky-600 hover:bg-sky-700 text-white rounded-lg text-xs font-bold disabled:opacity-50 flex items-center justify-center gap-2">
+                {executionState === 'loading' ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Layers className="w-4 h-4" />}
+                <span>Load Structure</span>
+              </button>
+            </div>
+          )}
+
+          {inputMode === 'uniprot' && (
+            <div className="space-y-4">
+              <div className="flex items-start justify-between gap-3">
                 <div>
-                  <h3 className="font-bold text-slate-900 dark:text-slate-100 text-lg flex items-center space-x-2">
-                    <span>{activeModel.title}</span>
-                  </h3>
-                  {activeModel.species && (
-                    <div className="text-xs text-slate-500 font-medium mt-0.5">{activeModel.species}</div>
-                  )}
+                  <h4 className="text-xs font-bold uppercase">UniProt / AlphaFold DB</h4>
+                  <p className="text-[11px] text-slate-500 mt-1">Retrieve protein metadata and an available AlphaFold DB predicted structure.</p>
                 </div>
-
-                <div className="flex items-center space-x-2 text-xs">
-                  {activeModel.source === 'ALPHAFOLD DB' && (
-                    <span className="px-2.5 py-1 bg-sky-50 dark:bg-sky-950 text-sky-700 dark:text-sky-300 border border-sky-200 dark:border-sky-800 rounded-lg font-bold">
-                      ALPHAFOLD DB • ONLINE
-                    </span>
-                  )}
-                  {activeModel.source === 'PDB' && (
-                    <span className="px-2.5 py-1 bg-emerald-50 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 rounded-lg font-bold">
-                      LOCAL STRUCTURE • {activeModel.isExperimental ? 'EXPERIMENTAL' : 'PREDICTED'}
-                    </span>
-                  )}
-                  {activeModel.source === 'SEQUENCE' && (
-                    <span className="px-2.5 py-1 bg-purple-50 dark:bg-purple-950 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800 rounded-lg font-bold">
-                      SEQUENCE ANALYSIS
-                    </span>
-                  )}
-                </div>
+                <OnlineBadge />
               </div>
-
-              {/* 3D VIEWER CONTAINER (Minimum Height 480-520px) */}
-              <div className="space-y-3">
-                <Pdb3DViewer
-                  pdbText={activeModel.pdbText}
-                  filename={activeModel.title}
-                  isAlphaFoldModel={activeModel.isAlphaFold}
-                  selectedChain={selectedChain}
-                  colorModeOverride={colorMode}
-                  renderModeOverride={renderMode}
-                  detectedAccession={activeModel.accession}
-                  detectedProteinName={activeModel.proteinName}
-                  detectedOrganism={activeModel.species}
-                  onFetchAlphaFoldRequested={(acc) => handleFetchUniProt(acc)}
-                />
-
-
-                {/* Controls Toolbar: Render Modes, Chain & Color Modes */}
-                {activeModel.pdbText && activeModel.pdbText.includes('ATOM') && (
-                  <div className="flex flex-wrap items-center justify-between gap-3 bg-slate-50 dark:bg-slate-800/60 p-2.5 rounded-xl text-xs">
-                    {/* Style Render Mode Selector */}
-                    <div className="flex items-center space-x-1.5">
-                      <span className="text-slate-500 font-semibold">Style:</span>
-                      <button
-                        onClick={() => setRenderMode('ribbon')}
-                        className={`px-2 py-1 rounded text-xs font-semibold cursor-pointer ${
-                          renderMode === 'ribbon' ? 'bg-sky-600 text-white' : 'bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300'
-                        }`}
-                      >
-                        Ribbon
-                      </button>
-                      <button
-                        onClick={() => setRenderMode('trace')}
-                        className={`px-2 py-1 rounded text-xs font-semibold cursor-pointer ${
-                          renderMode === 'trace' ? 'bg-sky-600 text-white' : 'bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300'
-                        }`}
-                      >
-                        Backbone
-                      </button>
-                      <button
-                        onClick={() => setRenderMode('spheres')}
-                        className={`px-2 py-1 rounded text-xs font-semibold cursor-pointer ${
-                          renderMode === 'spheres' ? 'bg-sky-600 text-white' : 'bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300'
-                        }`}
-                      >
-                        Cα
-                      </button>
-                    </div>
-
-                    {/* Chain Selector */}
-                    <div className="flex items-center space-x-2">
-                      <span className="text-slate-500 font-semibold">Chain:</span>
-                      <select
-                        value={selectedChain}
-                        onChange={(e) => setSelectedChain(e.target.value)}
-                        className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded px-2 py-1 text-xs font-bold text-slate-800 dark:text-slate-200 focus:outline-none"
-                      >
-                        <option value="ALL">All Chains ({activeModel.chains.length})</option>
-                        {activeModel.chains.map((c) => (
-                          <option key={c} value={c}>Chain {c}</option>
-                        ))}
-                      </select>
-                    </div>
-
-
-                    {/* Color Mode Selector */}
-                    <div className="flex items-center space-x-2">
-                      <span className="text-slate-500 font-semibold">Color by:</span>
-                      {activeModel.isAlphaFold ? (
-                        <button
-                          onClick={() => setColorMode('plddt')}
-                          className={`px-2 py-1 rounded text-xs font-semibold cursor-pointer ${
-                            colorMode === 'plddt' ? 'bg-sky-600 text-white' : 'bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300'
-                          }`}
-                        >
-                          pLDDT
-                        </button>
-                      ) : (
-                        <button
-                          onClick={() => setColorMode('bfactor')}
-                          className={`px-2 py-1 rounded text-xs font-semibold cursor-pointer ${
-                            colorMode === 'bfactor' ? 'bg-sky-600 text-white' : 'bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300'
-                          }`}
-                        >
-                          B-Factor
-                        </button>
-                      )}
-                      <button
-                        onClick={() => setColorMode('chain')}
-                        className={`px-2 py-1 rounded text-xs font-semibold cursor-pointer ${
-                          colorMode === 'chain' ? 'bg-sky-600 text-white' : 'bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300'
-                        }`}
-                      >
-                        Chain
-                      </button>
-                      <button
-                        onClick={() => setColorMode('spectrum')}
-                        className={`px-2 py-1 rounded text-xs font-semibold cursor-pointer ${
-                          colorMode === 'spectrum' ? 'bg-sky-600 text-white' : 'bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300'
-                        }`}
-                      >
-                        Spectrum
-                      </button>
-                    </div>
-                  </div>
-                )}
+              <input value={uniprotAccession} onChange={(e) => setUniprotAccession(e.target.value)} placeholder="P01308" className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg p-2.5 text-xs font-mono font-bold focus:outline-none focus:ring-2 focus:ring-sky-500" />
+              <div className="flex flex-wrap gap-1.5 text-[11px]">
+                {['P01308', 'P04637', 'P0DTC2'].map((acc) => (
+                  <button key={acc} onClick={() => handleFetchUniProt(acc)} className="px-2 py-1 bg-slate-100 dark:bg-slate-800 hover:bg-sky-50 rounded font-mono text-[11px]">
+                    {acc}
+                  </button>
+                ))}
               </div>
-
-              {/* ALPHAFOLD pLDDT LEGEND — ONLY RENDERED WHEN ALPHAFOLD pLDDT COLORING IS ACTIVE */}
-              {activeModel.isAlphaFold && colorMode === 'plddt' && (
-                <div className="space-y-2 p-3 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-slate-200/60 dark:border-slate-800">
-                  <div className="flex items-center justify-between text-xs font-bold text-slate-800 dark:text-slate-200">
-                    <span>pLDDT Confidence</span>
-                    <div className="group relative flex items-center space-x-1 text-[11px] font-normal text-slate-500 cursor-pointer">
-                      <Info className="w-3.5 h-3.5 text-sky-500" />
-                      <span>Estimates local confidence in predicted AlphaFold model</span>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-[11px]">
-                    <div className="flex items-center space-x-2 p-2 bg-blue-50 dark:bg-blue-950/60 rounded border border-blue-200 dark:border-blue-800">
-                      <div className="w-3 h-3 rounded-full bg-blue-600 shrink-0" />
-                      <div>
-                        <div className="font-bold text-blue-900 dark:text-blue-200">&gt; 90</div>
-                        <div className="text-slate-500">Very High</div>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center space-x-2 p-2 bg-cyan-50 dark:bg-cyan-950/60 rounded border border-cyan-200 dark:border-cyan-800">
-                      <div className="w-3 h-3 rounded-full bg-cyan-500 shrink-0" />
-                      <div>
-                        <div className="font-bold text-cyan-900 dark:text-cyan-200">70–90</div>
-                        <div className="text-slate-500">Confident</div>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center space-x-2 p-2 bg-yellow-50 dark:bg-yellow-950/60 rounded border border-yellow-200 dark:border-yellow-800">
-                      <div className="w-3 h-3 rounded-full bg-yellow-400 shrink-0" />
-                      <div>
-                        <div className="font-bold text-yellow-900 dark:text-yellow-200">50–70</div>
-                        <div className="text-slate-500">Low</div>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center space-x-2 p-2 bg-orange-50 dark:bg-orange-950/60 rounded border border-orange-200 dark:border-orange-800">
-                      <div className="w-3 h-3 rounded-full bg-orange-500 shrink-0" />
-                      <div>
-                        <div className="font-bold text-orange-900 dark:text-orange-200">&lt; 50</div>
-                        <div className="text-slate-500">Very Low</div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* PROTEIN PROPERTY CARDS (4 COMPACT METRIC CARDS) */}
-              {properties && (
-                <div className="space-y-4 pt-2">
-                  <div className="font-bold text-slate-800 dark:text-slate-200 text-sm">Protein Properties</div>
-
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                    <div className="p-3 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-slate-200/60 dark:border-slate-800">
-                      <div className="text-slate-500 font-semibold text-[11px]">LENGTH</div>
-                      <div className="text-lg font-bold text-slate-900 dark:text-slate-100">{properties.length} aa</div>
-                      <div className="text-[10px] text-slate-400 mt-0.5">Sequence-derived</div>
-                    </div>
-
-                    <div className="p-3 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-slate-200/60 dark:border-slate-800">
-                      <div className="text-slate-500 font-semibold text-[11px]">MASS</div>
-                      <div className="text-lg font-bold text-sky-600">{properties.molecular_weight_kda.toFixed(2)} kDa</div>
-                      <div className="text-[10px] text-slate-400 mt-0.5">Calculated composition</div>
-                    </div>
-
-                    <div className="p-3 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-slate-200/60 dark:border-slate-800">
-                      <div className="text-slate-500 font-semibold text-[11px]">pI</div>
-                      <div className="text-lg font-bold text-purple-600">{properties.isoelectric_point_pi.toFixed(2)}</div>
-                      <div className="text-[10px] text-slate-400 mt-0.5">Isoelectric point</div>
-                    </div>
-
-                    <div className="p-3 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-slate-200/60 dark:border-slate-800">
-                      <div className="text-slate-500 font-semibold text-[11px]">CHAINS</div>
-                      <div className="text-lg font-bold text-emerald-600">{activeModel.chains.length}</div>
-                      <div className="text-[10px] text-slate-400 mt-0.5">{selectedChain === 'ALL' ? 'All Chains' : `Chain ${selectedChain}`}</div>
-                    </div>
-                  </div>
-
-                  {/* Kyte-Doolittle Hydropathy Chart Section */}
-                  <div className="space-y-2 pt-2 border-t border-slate-100 dark:border-slate-800">
-                    <div>
-                      <div className="font-bold text-slate-800 dark:text-slate-200 text-xs">Kyte-Doolittle Hydropathy</div>
-                      <p className="text-[11px] text-slate-500">Sliding-window estimate of hydrophobic (&gt;0) and hydrophilic (&lt;0) regions.</p>
-                    </div>
-
-                    <div className="h-20 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl p-2 flex items-end justify-between space-x-0.5">
-                      {properties.hydropathy_profile.map((val, idx) => {
-                        const normalizedHeight = Math.min(100, Math.max(10, ((val + 4.5) / 9.0) * 100));
-                        const isHydrophobic = val > 0;
-                        return (
-                          <div
-                            key={idx}
-                            title={`Residue window ${idx + 1}: ${val.toFixed(2)}`}
-                            className={`flex-1 rounded-t transition-all ${
-                              isHydrophobic ? 'bg-sky-500 hover:bg-sky-400' : 'bg-amber-500 hover:bg-amber-400'
-                            }`}
-                            style={{ height: `${normalizedHeight}%` }}
-                          />
-                        );
-                      })}
-                    </div>
-                    <div className="flex justify-between text-[10px] text-slate-400 font-mono">
-                      <span>N-Terminus (1)</span>
-                      <span>Hydrophobic (&gt;0) / Hydrophilic (&lt;0)</span>
-                      <span>C-Terminus ({properties.length})</span>
-                    </div>
-                  </div>
-
-                  {/* Collapsible Sequence Panel */}
-                  <div className="space-y-2 pt-2 border-t border-slate-100 dark:border-slate-800">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <div className="font-bold text-slate-800 dark:text-slate-200 text-xs">Protein Sequence</div>
-                        {activeModel.pdbText && (
-                          <div className="text-[10px] text-slate-400">Sequence extracted from observed structure residues</div>
-                        )}
-                      </div>
-
-                      <div className="flex items-center space-x-2">
-                        <button
-                          onClick={handleCopyRawSeq}
-                          className="px-2.5 py-1 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 rounded text-slate-700 dark:text-slate-300 text-xs font-semibold cursor-pointer flex items-center space-x-1"
-                        >
-                          {copiedSeq ? <Check className="w-3 h-3 text-emerald-600" /> : <Copy className="w-3 h-3" />}
-                          <span>{copiedSeq ? 'Copied!' : 'Copy Sequence'}</span>
-                        </button>
-                        <button
-                          onClick={handleCopyFastaText}
-                          className="px-2.5 py-1 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 rounded text-slate-700 dark:text-slate-300 text-xs font-semibold cursor-pointer flex items-center space-x-1"
-                        >
-                          {copiedFasta ? <Check className="w-3 h-3 text-emerald-600" /> : <Copy className="w-3 h-3" />}
-                          <span>{copiedFasta ? 'Copied!' : 'Copy FASTA'}</span>
-                        </button>
-                      </div>
-                    </div>
-
-                    <div className="p-3 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl max-h-36 overflow-y-auto font-mono text-xs text-slate-800 dark:text-slate-200 leading-relaxed select-all">
-                      {activeModel.sequence}
-                    </div>
-                  </div>
-
-                </div>
-              )}
-
+              <button disabled={!uniprotAccession.trim() || executionState === 'loading'} onClick={() => handleFetchUniProt()} className="w-full py-2.5 bg-sky-600 hover:bg-sky-700 text-white rounded-lg text-xs font-bold disabled:opacity-50 flex items-center justify-center gap-2">
+                {executionState === 'loading' ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
+                <span>{executionState === 'loading' ? `Fetching ${uniprotAccession.toUpperCase()}` : 'Fetch Structure'}</span>
+              </button>
+              {executionState === 'loading' && <LoadingSteps steps={loadSteps} />}
             </div>
           )}
 
-        </div>
+          {inputMode === 'sequence' && (
+            <div className="space-y-4">
+              <div>
+                <h4 className="text-xs font-bold uppercase">Protein Sequence</h4>
+                <p className="text-[11px] text-slate-500 mt-1">Analyze amino-acid properties without fabricating coordinates.</p>
+              </div>
+              <FileUploader accept=".fasta,.fa,.faa,.txt" label="Drop protein FASTA" description="Supported: .fasta, .fa, .faa, .txt" onFileSelected={handleSequenceFiles} />
+              {sequenceFile && <FileCard file={sequenceFile} onClear={() => setSequenceFile(null)} />}
+              <textarea value={pastedSequence} onChange={(e) => setPastedSequence(e.target.value)} placeholder={insulinFasta} className="w-full h-32 p-2.5 font-mono text-xs bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-500" />
+              <button disabled={(!sequenceFile && !pastedSequence.trim()) || executionState === 'loading'} onClick={handleAnalyzeSequence} className="w-full py-2.5 bg-sky-600 hover:bg-sky-700 text-white rounded-lg text-xs font-bold disabled:opacity-50 flex items-center justify-center gap-2">
+                {executionState === 'loading' ? <RefreshCw className="w-4 h-4 animate-spin" /> : <FileText className="w-4 h-4" />}
+                <span>Analyze Sequence</span>
+              </button>
+            </div>
+          )}
 
+          <div className="pt-3 border-t border-slate-100 dark:border-slate-800 text-[11px] text-slate-400 font-mono flex items-center justify-between">
+            <span>Network only on explicit online fetch</span>
+            <span>RC</span>
+          </div>
+        </aside>
+
+        <main className="min-w-0 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-6 shadow-xs space-y-5">
+          {!activeProtein ? (
+            <EmptyWorkspace onFetch={() => handleFetchUniProt('P04637')} />
+          ) : (
+            <>
+              <ActiveHeader protein={activeProtein} />
+              <MetricCards protein={activeProtein} properties={properties} structureMetric={structureMetric} />
+              <TabBar activeTab={activeTab} setActiveTab={setActiveTab} />
+
+              {activeTab === 'structure' && (
+                <div className="space-y-4">
+                  <Pdb3DViewer
+                    pdbText={activeProtein.pdbText}
+                    filename={activeProtein.title}
+                    isAlphaFoldModel={isAlphaFold}
+                    selectedChain={selectedChain}
+                    colorModeOverride={colorMode}
+                    renderModeOverride={renderMode}
+                    detectedAccession={activeProtein.accession}
+                    detectedProteinName={activeProtein.proteinName}
+                    detectedOrganism={activeProtein.organism}
+                    onFetchAlphaFoldRequested={(acc) => handleFetchUniProt(acc)}
+                    highlightedResidue={highlightedResidue}
+                    onResidueSelected={(atom) => {
+                      setSelectedResidue(atom);
+                      setHighlightedResidue(atom.residueIndex);
+                    }}
+                  />
+                  {activeProtein.pdbText && (
+                    <ViewerControls
+                      chains={activeProtein.chains}
+                      selectedChain={selectedChain}
+                      setSelectedChain={setSelectedChain}
+                      renderMode={renderMode}
+                      setRenderMode={setRenderMode}
+                      colorMode={colorMode}
+                      setColorMode={setColorMode}
+                      isAlphaFold={isAlphaFold}
+                    />
+                  )}
+                  {selectedResidue && (
+                    <ResidueCard atom={selectedResidue} isAlphaFold={isAlphaFold} />
+                  )}
+                </div>
+              )}
+
+              {activeTab === 'confidence' && (
+                <ConfidenceTab protein={activeProtein} plddtSummary={plddtSummary} pae={pae} />
+              )}
+
+              {activeTab === 'sequence' && (
+                <SequenceTab protein={activeProtein} properties={properties} copiedSeq={copiedSeq} copiedFasta={copiedFasta} onCopy={copySequence} onSelectResidue={setHighlightedResidue} />
+              )}
+
+              {activeTab === 'mutations' && (
+                <MutationTab
+                  notation={mutationNotation}
+                  setNotation={setMutationNotation}
+                  onInspect={handleMutationInspect}
+                  result={mutationResult}
+                  error={mutationError}
+                  highlightedResidue={highlightedResidue}
+                  selectedAtom={selectedResidue}
+                  isAlphaFold={isAlphaFold}
+                />
+              )}
+            </>
+          )}
+        </main>
       </div>
     </div>
   );
 };
+
+const OnlineBadge = () => (
+  <span title="This request sends the accession identifier to external scientific databases. Local sequence and structure files are not uploaded." className="text-[10px] font-bold text-sky-600 dark:text-sky-400 bg-sky-50 dark:bg-sky-950 border border-sky-200 dark:border-sky-800 px-2 py-0.5 rounded flex items-center gap-1 shrink-0">
+    <Globe className="w-3 h-3" />
+    <span>ONLINE</span>
+  </span>
+);
+
+const FileCard = ({ file, onClear }: { file: SelectedFile; onClear: () => void }) => (
+  <div className="p-3 bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-lg flex items-center justify-between text-xs gap-3">
+    <div className="min-w-0">
+      <div className="font-bold font-mono truncate">{file.name}</div>
+      <div className="text-[10px] text-slate-500 font-mono">{file.format} · {file.size ? `${(file.size / 1024).toFixed(1)} KB` : 'content pending'}</div>
+    </div>
+    <button onClick={onClear} className="text-rose-600 hover:underline text-[11px] font-semibold">Remove</button>
+  </div>
+);
+
+const LoadingSteps = ({ steps }: { steps: Record<LoadStep, 'idle' | 'loading' | 'done' | 'error'> }) => {
+  const label = (state: string) => (state === 'done' ? '✓' : state === 'loading' ? '○' : state === 'error' ? '!' : '○');
+  return (
+    <div className="p-3 bg-slate-50 dark:bg-slate-800/60 rounded-lg text-xs space-y-1 font-mono">
+      <div>{label(steps.metadata)} UniProt metadata</div>
+      <div>{label(steps.model)} AlphaFold DB model</div>
+      <div>{label(steps.confidence)} Confidence data</div>
+    </div>
+  );
+};
+
+const EmptyWorkspace = ({ onFetch }: { onFetch: () => void }) => (
+  <div className="space-y-5">
+    <div>
+      <h3 className="font-bold text-lg">Active Protein</h3>
+      <p className="text-xs text-slate-500 mt-1">Choose one input workflow: structure file, UniProt accession, or protein sequence.</p>
+    </div>
+    <Pdb3DViewer pdbText="" onFetchAlphaFoldRequested={onFetch} />
+    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <InfoCard icon={<Layers className="w-4 h-4 text-sky-600" />} title="Structure File" text="Visualize existing PDB coordinates locally." />
+      <InfoCard icon={<Globe className="w-4 h-4 text-sky-600" />} title="UniProt" text="Retrieve AlphaFold DB predicted models online." />
+      <InfoCard icon={<Dna className="w-4 h-4 text-sky-600" />} title="Protein Sequence" text="Analyze amino-acid properties without coordinates." />
+    </div>
+  </div>
+);
+
+const InfoCard = ({ icon, title, text }: { icon: React.ReactNode; title: string; text: string }) => (
+  <div className="p-4 bg-slate-50 dark:bg-slate-800/60 rounded-lg border border-slate-200/60 dark:border-slate-800 space-y-1">
+    <div className="font-bold text-xs flex items-center gap-1.5">{icon}<span>{title}</span></div>
+    <p className="text-[11px] text-slate-500">{text}</p>
+  </div>
+);
+
+const ActiveHeader = ({ protein }: { protein: ActiveProtein }) => (
+  <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-3 border-b border-slate-100 dark:border-slate-800 pb-4">
+    <div>
+      <h3 className="font-bold text-lg">{protein.title}</h3>
+      <p className="text-xs text-slate-500 mt-1">
+        {[protein.proteinName, protein.organism, protein.gene ? `Gene ${protein.gene}` : ''].filter(Boolean).join(' · ') || protein.sequenceLabel}
+      </p>
+    </div>
+    <div className="flex flex-wrap gap-2 text-[11px] font-bold">
+      <span className="px-2.5 py-1 rounded-lg border bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700">{protein.sourceLabel}</span>
+      <span className="px-2.5 py-1 rounded-lg border bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700">{protein.structureType}</span>
+      <span className={`px-2.5 py-1 rounded-lg border ${protein.locationLabel === 'ONLINE' ? 'bg-sky-50 dark:bg-sky-950 text-sky-700 dark:text-sky-300 border-sky-200 dark:border-sky-800' : 'bg-emerald-50 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800'}`}>{protein.locationLabel}</span>
+    </div>
+  </div>
+);
+
+const MetricCards = ({ protein, properties, structureMetric }: { protein: ActiveProtein; properties: ProteinProperties | null; structureMetric: { label: string; value: string } }) => (
+  <div className="grid grid-cols-2 xl:grid-cols-4 gap-3">
+    <Metric label="LENGTH" value={hasProteinProperties(properties) ? `${properties.length} aa` : protein.sequence ? `${protein.sequence.length} aa` : '-'} />
+    <Metric label="MOLECULAR MASS" value={hasProteinProperties(properties) ? `${properties.molecular_weight_kda.toFixed(2)} kDa` : '-'} />
+    <Metric label="ESTIMATED pI" value={hasProteinProperties(properties) ? properties.isoelectric_point_pi.toFixed(2) : '-'} />
+    <Metric label={structureMetric.label} value={structureMetric.value} />
+  </div>
+);
+
+const Metric = ({ label, value }: { label: string; value: string }) => (
+  <div className="p-3 bg-slate-50 dark:bg-slate-800/60 rounded-lg border border-slate-200/60 dark:border-slate-800">
+    <div className="text-slate-500 font-semibold text-[11px]">{label}</div>
+    <div className="text-lg font-bold text-slate-900 dark:text-slate-100">{value}</div>
+  </div>
+);
+
+const TabBar = ({ activeTab, setActiveTab }: { activeTab: WorkspaceTab; setActiveTab: (tab: WorkspaceTab) => void }) => (
+  <div className="flex flex-wrap gap-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-lg text-xs font-bold">
+    {(['structure', 'confidence', 'sequence', 'mutations'] as WorkspaceTab[]).map((tab) => (
+      <button key={tab} onClick={() => setActiveTab(tab)} className={`px-3 py-2 rounded-md capitalize ${activeTab === tab ? 'bg-white dark:bg-slate-900 text-sky-600 shadow-xs' : 'text-slate-600 dark:text-slate-300'}`}>
+        {tab}
+      </button>
+    ))}
+  </div>
+);
+
+const ViewerControls = (props: {
+  chains: string[];
+  selectedChain: string;
+  setSelectedChain: (value: string) => void;
+  renderMode: 'ribbon' | 'trace' | 'spheres';
+  setRenderMode: (value: 'ribbon' | 'trace' | 'spheres') => void;
+  colorMode: 'plddt' | 'chain' | 'spectrum' | 'bfactor';
+  setColorMode: (value: 'plddt' | 'chain' | 'spectrum' | 'bfactor') => void;
+  isAlphaFold: boolean;
+}) => (
+  <div className="flex flex-wrap items-center justify-between gap-3 bg-slate-50 dark:bg-slate-800/60 p-2.5 rounded-lg text-xs">
+    <div className="flex items-center gap-1.5">
+      <span className="text-slate-500 font-semibold">Style:</span>
+      {[
+        ['ribbon', 'Ribbon'],
+        ['trace', 'Backbone'],
+        ['spheres', 'Cα'],
+      ].map(([value, label]) => (
+        <button key={value} onClick={() => props.setRenderMode(value as 'ribbon' | 'trace' | 'spheres')} className={`px-2 py-1 rounded font-semibold ${props.renderMode === value ? 'bg-sky-600 text-white' : 'bg-slate-200 dark:bg-slate-700'}`}>{label}</button>
+      ))}
+    </div>
+    <div className="flex items-center gap-2">
+      <span className="text-slate-500 font-semibold">Chain:</span>
+      <select value={props.selectedChain} onChange={(e) => props.setSelectedChain(e.target.value)} className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded px-2 py-1 text-xs font-bold">
+        <option value="ALL">All Chains ({props.chains.length || '-'})</option>
+        {props.chains.map((chain) => <option key={chain} value={chain}>Chain {chain}</option>)}
+      </select>
+    </div>
+    <div className="flex items-center gap-1.5">
+      <span className="text-slate-500 font-semibold">Color:</span>
+      {(props.isAlphaFold ? ['plddt', 'chain', 'spectrum'] : ['bfactor', 'chain', 'spectrum']).map((mode) => (
+        <button key={mode} onClick={() => props.setColorMode(mode as 'plddt' | 'chain' | 'spectrum' | 'bfactor')} className={`px-2 py-1 rounded font-semibold ${props.colorMode === mode ? 'bg-sky-600 text-white' : 'bg-slate-200 dark:bg-slate-700'}`}>{mode === 'plddt' ? 'pLDDT' : mode === 'bfactor' ? 'B-Factor' : mode}</button>
+      ))}
+    </div>
+  </div>
+);
+
+const ResidueCard = ({ atom, isAlphaFold }: { atom: ProteinAtom; isAlphaFold: boolean }) => (
+  <div className="p-3 bg-slate-50 dark:bg-slate-800/60 rounded-lg border border-slate-200/60 dark:border-slate-800 text-xs grid grid-cols-2 md:grid-cols-5 gap-2">
+    <Metric label="RESIDUE" value={`${atom.residueIndex}`} />
+    <Metric label="AMINO ACID" value={`${atom.resName} (${atom.aa})`} />
+    <Metric label="PDB POSITION" value={`${atom.aa}${atom.resSeq}`} />
+    <Metric label="CHAIN" value={atom.chainID} />
+    <Metric label={isAlphaFold ? 'pLDDT' : 'B-FACTOR'} value={atom.bFactor === null ? '-' : atom.bFactor.toFixed(1)} />
+  </div>
+);
+
+const ConfidenceTab = ({ protein, plddtSummary, pae }: { protein: ActiveProtein; plddtSummary: ReturnType<typeof summarizePlddt> | null; pae: PaeMatrix | null }) => {
+  if (protein.sourceType !== 'ALPHAFOLD_PREDICTED') {
+    return (
+      <div className="p-5 bg-slate-50 dark:bg-slate-800/60 rounded-lg border border-slate-200/60 dark:border-slate-800 space-y-2">
+        <h4 className="font-bold">{protein.sourceType === 'SEQUENCE_ONLY' ? 'No structure confidence data' : 'Experimental structure'}</h4>
+        <p className="text-sm text-slate-600 dark:text-slate-300">
+          {protein.sourceType === 'SEQUENCE_ONLY'
+            ? 'Sequence-only input has no atomic coordinates, pLDDT, or PAE matrix.'
+            : 'AlphaFold confidence metrics are not shown for this structure. Deposited B-factor values are experimental structure metadata, not pLDDT.'}
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="p-4 bg-slate-50 dark:bg-slate-800/60 rounded-lg border border-slate-200/60 dark:border-slate-800 space-y-3">
+        <h4 className="font-bold">Local Confidence - pLDDT</h4>
+        <p className="text-sm text-slate-600 dark:text-slate-300">pLDDT estimates AlphaFold's local confidence for each residue. It is not an accuracy guarantee or a probability that the structure is correct.</p>
+        {plddtSummary && (
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-2 text-xs">
+            <Metric label="MEAN" value={plddtSummary.mean === null ? '-' : plddtSummary.mean.toFixed(1)} />
+            <Metric label=">90 VERY HIGH" value={formatPercent(plddtSummary.veryHigh, plddtSummary.count)} />
+            <Metric label="70-90 CONFIDENT" value={formatPercent(plddtSummary.confident, plddtSummary.count)} />
+            <Metric label="50-70 LOW" value={formatPercent(plddtSummary.low, plddtSummary.count)} />
+            <Metric label="<50 VERY LOW" value={formatPercent(plddtSummary.veryLow, plddtSummary.count)} />
+          </div>
+        )}
+        <p className="text-xs text-slate-500">
+          Low-confidence regions may correspond to disorder or structural uncertainty; they are not proof of molecular flexibility.
+        </p>
+        {plddtSummary?.lowRegions.length ? (
+          <div className="text-xs text-slate-600 dark:text-slate-300">Low-confidence regions: {plddtSummary.lowRegions.map((r) => `${r.start}-${r.end}`).join(', ')}</div>
+        ) : null}
+      </div>
+      <div className="p-4 bg-slate-50 dark:bg-slate-800/60 rounded-lg border border-slate-200/60 dark:border-slate-800 space-y-3">
+        <h4 className="font-bold">Relative Position Confidence - PAE</h4>
+        <p className="text-sm text-slate-600 dark:text-slate-300">Predicted Aligned Error (PAE) estimates uncertainty in the relative positions of residues. Low PAE between two regions suggests their relative orientation is predicted more confidently.</p>
+        {pae ? <PaeHeatmap pae={pae} /> : <p className="text-xs text-slate-500">PAE data is unavailable or did not match the expected residue matrix.</p>}
+      </div>
+      <LimitationCards />
+    </div>
+  );
+};
+
+const PaeHeatmap = ({ pae }: { pae: PaeMatrix }) => {
+  const stride = Math.max(1, Math.ceil(pae.size / 96));
+  const sampled = pae.matrix.filter((_, y) => y % stride === 0).map((row) => row.filter((_, x) => x % stride === 0));
+  return (
+    <div className="space-y-2">
+      <div className="grid w-full max-w-[560px] aspect-square border border-slate-300 dark:border-slate-700 bg-white" style={{ gridTemplateColumns: `repeat(${sampled.length}, minmax(0, 1fr))` }}>
+        {sampled.flatMap((row, y) =>
+          row.map((value, x) => {
+            const ratio = Math.min(1, value / pae.max);
+            const color = `hsl(${210 - ratio * 170}, 85%, ${45 + ratio * 12}%)`;
+            return <div key={`${x}-${y}`} title={`Residue ${y * stride + 1} aligned on residue ${x * stride + 1}: ${value.toFixed(1)} Å predicted aligned error`} style={{ backgroundColor: color }} />;
+          }),
+        )}
+      </div>
+      <div className="flex justify-between max-w-[560px] text-[11px] text-slate-500">
+        <span>Residue i</span>
+        <span>0 Å</span>
+        <span>Max {pae.max.toFixed(1)} Å</span>
+        <span>Residue j</span>
+      </div>
+    </div>
+  );
+};
+
+const SequenceTab = ({ protein, properties, copiedSeq, copiedFasta, onCopy, onSelectResidue }: {
+  protein: ActiveProtein;
+  properties: ProteinProperties | null;
+  copiedSeq: boolean;
+  copiedFasta: boolean;
+  onCopy: (asFasta: boolean) => void;
+  onSelectResidue: (position: number) => void;
+}) => (
+  <div className="space-y-4">
+    <div className="flex items-center justify-between gap-3">
+      <div>
+        <h4 className="font-bold">Protein Sequence</h4>
+        <p className="text-xs text-slate-500">{protein.sequenceLabel}</p>
+      </div>
+      <div className="flex gap-2">
+        <button onClick={() => onCopy(false)} className="px-2.5 py-1 bg-slate-100 dark:bg-slate-800 rounded text-xs font-semibold flex items-center gap-1">{copiedSeq ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}Copy Sequence</button>
+        <button onClick={() => onCopy(true)} className="px-2.5 py-1 bg-slate-100 dark:bg-slate-800 rounded text-xs font-semibold flex items-center gap-1">{copiedFasta ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}Copy FASTA</button>
+      </div>
+    </div>
+    <div className="p-3 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg max-h-56 overflow-y-auto font-mono text-xs leading-relaxed">
+      {protein.sequence.split('').map((aa, idx) => (
+        <button key={idx} onClick={() => onSelectResidue(idx + 1)} className="inline-block px-0.5 hover:bg-yellow-100 dark:hover:bg-yellow-900 rounded" title={`Residue ${idx + 1}: ${aa}`}>{aa}</button>
+      ))}
+    </div>
+    {properties && <HydropathyChart properties={properties} />}
+    {properties && <Composition properties={properties} />}
+  </div>
+);
+
+const Composition = ({ properties }: { properties: ProteinProperties }) => (
+  <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
+    <Metric label="HYDROPHOBIC" value={String(properties.composition.hydrophobic)} />
+    <Metric label="POLAR" value={String(properties.composition.polar)} />
+    <Metric label="ACIDIC" value={String(properties.composition.acidic)} />
+    <Metric label="BASIC" value={String(properties.composition.basic)} />
+    <Metric label="GLYCINE" value={String(properties.composition.glycine)} />
+  </div>
+);
+
+const HydropathyChart = ({ properties }: { properties: ProteinProperties }) => (
+  <div className="space-y-2">
+    <div>
+      <h4 className="font-bold text-sm">Kyte-Doolittle Hydropathy</h4>
+      <p className="text-[11px] text-slate-500">Window size 9. Hydrophobic region scores are above the zero line.</p>
+    </div>
+    <div className="relative h-32 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg p-2 flex items-center">
+      <div className="absolute left-2 right-2 top-1/2 border-t border-slate-300 dark:border-slate-700" />
+      <div className="relative w-full h-full flex items-center gap-px">
+        {properties.hydropathy_profile.map((value, idx) => {
+          const height = Math.max(4, Math.min(50, Math.abs(value / 4.5) * 50));
+          return <div key={idx} title={`Residue window ${idx + 1}: ${value.toFixed(2)}`} className={`flex-1 ${value >= 0 ? 'self-start mt-[50%] bg-sky-500' : 'self-end mb-[50%] bg-amber-500'}`} style={{ height: `${height}%` }} />;
+        })}
+      </div>
+    </div>
+  </div>
+);
+
+const MutationTab = ({ notation, setNotation, onInspect, result, error, highlightedResidue, selectedAtom, isAlphaFold }: {
+  notation: string;
+  setNotation: (value: string) => void;
+  onInspect: () => void;
+  result: MutationDescription | null;
+  error: string | null;
+  highlightedResidue: number | null;
+  selectedAtom: ProteinAtom | null;
+  isAlphaFold: boolean;
+}) => (
+  <div className="space-y-4">
+    <div className="p-4 bg-slate-50 dark:bg-slate-800/60 rounded-lg border border-slate-200/60 dark:border-slate-800 space-y-3">
+      <div>
+        <h4 className="font-bold">Mutation Inspector</h4>
+        <p className="text-sm text-slate-600 dark:text-slate-300">Inspect a single amino-acid substitution in sequence and structure context. This is not a mutation-effect predictor.</p>
+      </div>
+      <div className="flex flex-col sm:flex-row gap-2">
+        <input value={notation} onChange={(e) => setNotation(e.target.value)} placeholder="F24S" className="bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 font-mono text-sm" />
+        <button onClick={onInspect} className="px-4 py-2 bg-sky-600 hover:bg-sky-700 text-white rounded-lg text-sm font-bold">Inspect Mutation</button>
+      </div>
+      {error && <p className="text-xs text-rose-600 font-semibold">{error}</p>}
+      {result && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <Metric label={result.notation} value={`${result.wildTypeName} → ${result.mutantName}`} />
+          <Metric label="AMINO-ACID CLASS" value={`${result.wildTypeClass} → ${result.mutantClass}`} />
+          <Metric label="HYDROPATHY DELTA" value={result.hydropathyDelta.toFixed(2)} />
+          <Metric label="MASS DELTA" value={`${result.massDelta.toFixed(2)} Da`} />
+          <Metric label="CHARGE" value={result.chargeChange} />
+          <Metric label="POLARITY" value={result.polarityChange} />
+        </div>
+      )}
+      <div className="text-xs text-slate-500">Mutation location: {highlightedResidue ? `residue ${highlightedResidue}` : 'select or inspect a residue'}</div>
+      {selectedAtom && <ResidueCard atom={selectedAtom} isAlphaFold={isAlphaFold} />}
+    </div>
+    <div className="p-4 bg-amber-50 dark:bg-amber-950/50 border border-amber-200 dark:border-amber-800 rounded-lg text-sm text-amber-900 dark:text-amber-200">
+      <h4 className="font-bold">Mutation Interpretation</h4>
+      <p className="mt-1">These comparisons describe sequence and structural context. BioFile Toolkit is not predicting whether this mutation stabilizes or destabilizes the protein. AlphaFold confidence does not establish mutation pathogenicity or ΔΔG.</p>
+    </div>
+  </div>
+);
+
+const LimitationCards = () => (
+  <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
+    <InfoCard icon={<Activity className="w-4 h-4 text-sky-600" />} title="Protein Dynamics" text="AlphaFold DB models represent predicted structural conformations, not molecular-dynamics trajectories." />
+    <InfoCard icon={<Search className="w-4 h-4 text-sky-600" />} title="Binding & Drug Design" text="A predicted protein structure alone does not establish a drug-binding pose or binding affinity." />
+    <InfoCard icon={<Info className="w-4 h-4 text-sky-600" />} title="Cellular Context" text="Crowding, membranes, cofactors, modifications, partners, pH, and ionic conditions may alter biological behavior." />
+  </div>
+);

@@ -1,19 +1,8 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { RotateCw, ZoomIn, ZoomOut, Activity, Box, Search, Globe, Sparkles } from 'lucide-react';
+import { ProteinAtom, parsePdbAtoms } from '../../utils/proteinStudio';
 
 
-
-export interface Atom {
-  serial: number;
-  name: string;
-  resName: string;
-  chainID: string;
-  resSeq: number;
-  x: number;
-  y: number;
-  z: number;
-  bFactor: number;
-}
 
 interface Pdb3DViewerProps {
   pdbText?: string;
@@ -26,6 +15,8 @@ interface Pdb3DViewerProps {
   detectedProteinName?: string;
   detectedOrganism?: string;
   onFetchAlphaFoldRequested?: (accession: string) => void;
+  highlightedResidue?: number | null;
+  onResidueSelected?: (atom: ProteinAtom) => void;
   className?: string;
 }
 
@@ -40,11 +31,14 @@ export const Pdb3DViewer: React.FC<Pdb3DViewerProps> = ({
   detectedProteinName,
   detectedOrganism,
   onFetchAlphaFoldRequested,
+  highlightedResidue,
+  onResidueSelected,
   className = '',
 }) => {
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const [atoms, setAtoms] = useState<Atom[]>([]);
+  const projectedRef = useRef<Array<{ px: number; py: number; atom: ProteinAtom }>>([]);
+  const [atoms, setAtoms] = useState<ProteinAtom[]>([]);
   const [renderMode, setRenderMode] = useState<'ribbon' | 'trace' | 'spheres'>('ribbon');
   const [colorMode, setColorMode] = useState<'plddt' | 'chain' | 'spectrum' | 'bfactor'>('plddt');
   const [autoRotate, setAutoRotate] = useState<boolean>(true);
@@ -64,46 +58,26 @@ export const Pdb3DViewer: React.FC<Pdb3DViewerProps> = ({
   const isDraggingRef = useRef<boolean>(false);
   const lastMouseRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
 
-  // 1. Ensure canvas pixel dimensions match layout at top-level component scope
+  // 1. Ensure canvas pixel dimensions match layout without feeding React layout loops.
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const updateSize = () => {
       const w = canvas.clientWidth || 600;
-      const h = canvas.clientHeight || 480;
+      const h = canvas.clientHeight || 520;
       const dpr = Math.min(2, window.devicePixelRatio || 1);
       canvas.width = w * dpr;
       canvas.height = h * dpr;
     };
     updateSize();
-    window.addEventListener('resize', updateSize);
-    return () => window.removeEventListener('resize', updateSize);
+    const observer = new ResizeObserver(updateSize);
+    observer.observe(canvas);
+    return () => observer.disconnect();
   }, []);
 
   // 2. Parse PDB text strictly — DO NOT fabricate 3D coordinates if no ATOM records exist
   useEffect(() => {
-    const parsedAtoms: Atom[] = [];
-
-    if (pdbText && (pdbText.includes('ATOM') || pdbText.includes('HETATM'))) {
-      const lines = pdbText.split('\n');
-      for (let line of lines) {
-        if (line.startsWith('ATOM') || line.startsWith('HETATM')) {
-          const name = line.substring(12, 16).trim();
-          if (name === 'CA') {
-            const serial = parseInt(line.substring(6, 11).trim()) || 0;
-            const resName = line.substring(17, 20).trim();
-            const chainID = line.substring(21, 22).trim() || 'A';
-            const resSeq = parseInt(line.substring(22, 26).trim()) || 0;
-            const x = parseFloat(line.substring(30, 38).trim()) || 0;
-            const y = parseFloat(line.substring(38, 46).trim()) || 0;
-            const z = parseFloat(line.substring(46, 54).trim()) || 0;
-            const bFactor = parseFloat(line.substring(60, 66).trim()) || 0;
-
-            parsedAtoms.push({ serial, name, resName, chainID, resSeq, x, y, z, bFactor });
-          }
-        }
-      }
-    }
+    const parsedAtoms = parsePdbAtoms(pdbText);
 
     // Filter by chain if selectedChain !== 'ALL'
     const filtered = selectedChain === 'ALL'
@@ -114,7 +88,7 @@ export const Pdb3DViewer: React.FC<Pdb3DViewerProps> = ({
   }, [pdbText, selectedChain]);
 
   // Color lookup helper
-  const getAtomColor = (atom: Atom, idx: number, total: number): string => {
+  const getAtomColor = (atom: ProteinAtom, idx: number, total: number): string => {
     if (colorMode === 'spectrum') {
       return `hsl(${(idx / total) * 300}, 85%, 55%)`;
     }
@@ -125,12 +99,12 @@ export const Pdb3DViewer: React.FC<Pdb3DViewerProps> = ({
     }
     if (colorMode === 'bfactor' || !isAlphaFoldModel) {
       // Experimental B-factor spectrum
-      const b = Math.max(0, Math.min(100, atom.bFactor));
+      const b = Math.max(0, Math.min(100, atom.bFactor || 0));
       const hue = Math.max(0, Math.min(240, 240 - (b / 100) * 240));
       return `hsl(${hue}, 85%, 55%)`;
     }
     // AlphaFold pLDDT coloring
-    const plddt = atom.bFactor;
+    const plddt = atom.bFactor || 0;
     if (plddt > 90) return '#1d4ed8'; // Deep Blue (>90)
     if (plddt >= 70) return '#06b6d4'; // Cyan (70-90)
     if (plddt >= 50) return '#eab308'; // Yellow (50-70)
@@ -204,6 +178,7 @@ export const Pdb3DViewer: React.FC<Pdb3DViewerProps> = ({
       });
 
       projected.sort((a, b) => a.pz - b.pz);
+      projectedRef.current = projected.map((p) => ({ px: p.px, py: p.py, atom: p.atom }));
 
       // Render 3D Ribbon / Backbone / Spheres
       if (renderMode === 'ribbon' || renderMode === 'trace') {
@@ -244,13 +219,28 @@ export const Pdb3DViewer: React.FC<Pdb3DViewerProps> = ({
         }
       }
 
+      if (highlightedResidue) {
+        const target = projected.find((p) => p.atom.residueIndex === highlightedResidue || p.atom.resSeq === highlightedResidue);
+        if (target) {
+          ctx.beginPath();
+          ctx.arc(target.px, target.py, 13, 0, Math.PI * 2);
+          ctx.strokeStyle = '#facc15';
+          ctx.lineWidth = 4;
+          ctx.stroke();
+          ctx.beginPath();
+          ctx.arc(target.px, target.py, 5, 0, Math.PI * 2);
+          ctx.fillStyle = '#fef08a';
+          ctx.fill();
+        }
+      }
+
       animId = requestAnimationFrame(render);
     };
 
     render();
 
     return () => cancelAnimationFrame(animId);
-  }, [atoms, renderMode, colorMode, autoRotate]);
+  }, [atoms, renderMode, colorMode, autoRotate, highlightedResidue]);
 
   const handleMouseDown = (e: React.MouseEvent) => {
     isDraggingRef.current = true;
@@ -281,11 +271,29 @@ export const Pdb3DViewer: React.FC<Pdb3DViewerProps> = ({
     }
   };
 
+  const handleCanvasClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    if (!onResidueSelected) return;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const rect = canvas.getBoundingClientRect();
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    const x = (e.clientX - rect.left) * dpr;
+    const y = (e.clientY - rect.top) * dpr;
+    let best: { atom: ProteinAtom; distance: number } | null = null;
+    for (const point of projectedRef.current) {
+      const distance = Math.hypot(point.px - x, point.py - y);
+      if (distance < 18 && (!best || distance < best.distance)) {
+        best = { atom: point.atom, distance };
+      }
+    }
+    if (best) onResidueSelected(best.atom);
+  };
+
   // Render Empty State or 3D STRUCTURE AVAILABLE Callout if no 3D coordinates are loaded
   if (atoms.length === 0) {
     if (detectedAccession) {
       return (
-        <div className={`relative w-full h-[480px] min-h-[440px] max-h-[560px] bg-slate-950 rounded-xl border border-slate-800 overflow-hidden flex flex-col items-center justify-center text-center p-8 shadow-inner select-none ${className}`}>
+        <div className={`relative w-full h-[clamp(520px,60vh,760px)] min-h-[520px] bg-slate-950 rounded-xl border border-slate-800 overflow-hidden flex flex-col items-center justify-center text-center p-8 shadow-inner select-none ${className}`}>
           <div className="w-16 h-16 rounded-2xl bg-sky-950/80 border border-sky-800/80 flex items-center justify-center mb-4 text-sky-400 shadow-lg animate-pulse">
             <Globe className="w-8 h-8 text-sky-400 stroke-1" />
           </div>
@@ -296,8 +304,15 @@ export const Pdb3DViewer: React.FC<Pdb3DViewerProps> = ({
           </div>
 
           <h4 className="text-lg font-bold text-slate-100 mb-1 font-mono">
-            AlphaFold DB model found for {detectedAccession}
+            No 3D coordinates loaded
           </h4>
+          <p className="text-xs text-slate-400 max-w-md leading-relaxed mb-3">
+            This sequence contains amino-acid information but no atomic coordinates.
+          </p>
+
+          <h5 className="text-base font-bold text-slate-100 mb-1 font-mono">
+            AlphaFold DB structure may be available for {detectedAccession}
+          </h5>
           <p className="text-xs text-slate-400 max-w-md leading-relaxed mb-6 font-medium">
             {detectedProteinName || 'Protein'} {detectedOrganism ? `• ${detectedOrganism}` : ''}
           </p>
@@ -307,7 +322,7 @@ export const Pdb3DViewer: React.FC<Pdb3DViewerProps> = ({
             className="px-6 py-3 bg-gradient-to-r from-sky-600 to-blue-600 hover:from-sky-500 hover:to-blue-500 text-white rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center space-x-2 shadow-lg hover:shadow-sky-500/20"
           >
             <Globe className="w-4 h-4" />
-            <span>Fetch & Render 3D Structure — ONLINE</span>
+            <span>Fetch Structure</span>
           </button>
           <span className="text-[10px] text-slate-500 font-mono mt-3">Contacts EMBL-EBI AlphaFold DB using accession {detectedAccession}</span>
         </div>
@@ -315,17 +330,16 @@ export const Pdb3DViewer: React.FC<Pdb3DViewerProps> = ({
     }
 
     return (
-      <div className={`relative w-full h-[480px] min-h-[440px] max-h-[560px] bg-slate-950 rounded-xl border border-slate-800 overflow-hidden flex flex-col items-center justify-center text-center p-8 shadow-inner select-none ${className}`}>
+      <div className={`relative w-full h-[clamp(520px,60vh,760px)] min-h-[520px] bg-slate-950 rounded-xl border border-slate-800 overflow-hidden flex flex-col items-center justify-center text-center p-8 shadow-inner select-none ${className}`}>
         <div className="w-16 h-16 rounded-2xl bg-slate-900 border border-slate-800 flex items-center justify-center mb-4 text-slate-500 shadow-sm">
           <Box className="w-8 h-8 text-sky-500/80 stroke-1" />
         </div>
 
         <h4 className="text-base font-bold text-slate-200 mb-1">
-          No 3D structure loaded
+          No 3D coordinates loaded
         </h4>
         <p className="text-xs text-slate-400 max-w-md leading-relaxed mb-6">
-          A protein sequence contains amino-acid information but no atomic coordinates.
-          To view a 3D structure, load a PDB/mmCIF file or fetch an AlphaFold DB model using a UniProt accession.
+          Protein sequences contain amino-acid information but do not define a unique 3D structure.
         </p>
 
         {onFetchAlphaFoldRequested && (
@@ -343,7 +357,7 @@ export const Pdb3DViewer: React.FC<Pdb3DViewerProps> = ({
 
 
   return (
-    <div className={`relative w-full h-[480px] min-h-[440px] max-h-[560px] bg-slate-950 rounded-xl border border-slate-800 overflow-hidden flex flex-col justify-between shadow-inner select-none ${className}`}>
+    <div className={`relative w-full h-[clamp(520px,60vh,760px)] min-h-[520px] bg-slate-950 rounded-xl border border-slate-800 overflow-hidden flex flex-col justify-between shadow-inner select-none ${className}`}>
       {/* 3D Toolbar Controls */}
       <div className="absolute top-3 left-3 z-10 flex items-center space-x-2 bg-slate-900/80 backdrop-blur border border-slate-800 p-1.5 rounded-lg text-xs text-slate-300">
         <button
@@ -455,6 +469,7 @@ export const Pdb3DViewer: React.FC<Pdb3DViewerProps> = ({
         onMouseUp={handleMouseUp}
         onMouseLeave={handleMouseUp}
         onWheel={handleWheel}
+        onClick={handleCanvasClick}
         className="w-full h-full cursor-grab active:cursor-grabbing block"
       />
 
