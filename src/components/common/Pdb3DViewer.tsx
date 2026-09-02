@@ -342,8 +342,8 @@ export const Pdb3DViewer: React.FC<Pdb3DViewerProps> = ({
           Protein sequences contain amino-acid information but do not define a unique 3D structure.
         </p>
 
-        <p className="text-[11px] text-slate-500 max-w-sm leading-relaxed">
-          To retrieve a predicted structure, switch to UniProt mode and enter the accession explicitly.
+        <p className="text-[11px] text-slate-400 max-w-sm leading-relaxed">
+          No UniProt accession detected. AlphaFold DB lookup requires a UniProt accession, such as P01308 or P04637.
         </p>
       </div>
     );

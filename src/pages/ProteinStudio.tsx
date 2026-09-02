@@ -232,6 +232,10 @@ export const ProteinStudio: React.FC<ProteinStudioProps> = ({ onNavigate }) => {
       format: kind === 'protein_fasta' ? 'FASTA' : 'Text',
     });
     setPastedSequence('');
+    setActiveProtein(null);
+    setProperties(null);
+    resetAlphaFoldState();
+    setMutationResult(null);
     clearErrors();
   };
 
@@ -395,7 +399,7 @@ export const ProteinStudio: React.FC<ProteinStudioProps> = ({ onNavigate }) => {
     setExecutionState('loading');
     const { id } = startRequest();
     try {
-      const lookupIds = extractLookupIds(raw);
+      const lookupIds = extractLookupIds(`${sequenceFile?.name || ''}\n${raw}`);
       const parsed = parseProteinInput(raw);
       if (!raw.trim().startsWith('>') && lookupIds.uniprotAccessions.length > 0 && parsed.sequence.length > 40) {
         const accession = lookupIds.uniprotAccessions[0];
@@ -411,9 +415,10 @@ export const ProteinStudio: React.FC<ProteinStudioProps> = ({ onNavigate }) => {
         setErrorMessage('This sequence appears to be nucleotide DNA/RNA rather than protein amino acids.');
       }
       const header = parsed.header;
+      const accession = header?.accession || lookupIds.uniprotAccessions[0];
       setActiveProtein({
-        title: header?.accession ? `${header.accession} · ${header.entryName || header.proteinName || 'Protein sequence'}` : sequenceFile?.name || 'Analyzed Protein Sequence',
-        accession: header?.accession,
+        title: accession ? `${accession} · ${header?.entryName || header?.proteinName || 'Protein sequence'}` : sequenceFile?.name || 'Analyzed Protein Sequence',
+        accession,
         entryName: header?.entryName,
         proteinName: header?.proteinName,
         organism: header?.organism,
