@@ -304,10 +304,10 @@ export const Pdb3DViewer: React.FC<Pdb3DViewerProps> = ({
           </div>
 
           <h4 className="text-lg font-bold text-slate-100 mb-1 font-mono">
-            No 3D coordinates loaded
+            Sequence analyzed, structure not loaded
           </h4>
           <p className="text-xs text-slate-400 max-w-md leading-relaxed mb-3">
-            This sequence contains amino-acid information but no atomic coordinates.
+            FASTA provides amino-acid information, not atomic coordinates. Fetch the existing AlphaFold DB model below to visualize a structure.
           </p>
 
           <h5 className="text-base font-bold text-slate-100 mb-1 font-mono">

@@ -135,7 +135,9 @@ export function parseFastaHeader(headerLine: string): ParsedHeaderInfo {
     const rest = dbMatch[3];
     result.organism = rest.match(/OS=([^=]+?)(?=\s+[A-Z]{2}=|$)/)?.[1]?.trim();
     result.gene = rest.match(/GN=([^=]+?)(?=\s+[A-Z]{2}=|$)/)?.[1]?.trim();
-    result.proteinName = rest.split(/\s+[A-Z]{2}=/)[0]?.trim();
+    const description = rest.split(/\s+[A-Z]{2}=/i)[0]?.trim() || '';
+    const recName = description.match(/(?:^|;\s*)RecName:\s*Full=([^;]+)/i)?.[1]?.trim();
+    result.proteinName = recName || description;
     return result;
   }
 
