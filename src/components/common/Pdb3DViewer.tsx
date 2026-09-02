@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { RotateCw, ZoomIn, ZoomOut, Activity, Box, Search, Globe, Sparkles } from 'lucide-react';
+import { RotateCw, ZoomIn, ZoomOut, Activity, Box, Globe, Sparkles } from 'lucide-react';
 import { ProteinAtom, parsePdbAtoms } from '../../utils/proteinStudio';
 
 
@@ -342,15 +342,9 @@ export const Pdb3DViewer: React.FC<Pdb3DViewerProps> = ({
           Protein sequences contain amino-acid information but do not define a unique 3D structure.
         </p>
 
-        {onFetchAlphaFoldRequested && (
-          <button
-            onClick={() => onFetchAlphaFoldRequested('P04637')}
-            className="px-4 py-2 bg-sky-600 hover:bg-sky-500 text-white rounded-lg text-xs font-semibold transition-all cursor-pointer flex items-center space-x-2 shadow-sm"
-          >
-            <Search className="w-4 h-4" />
-            <span>Look up AlphaFold DB structure</span>
-          </button>
-        )}
+        <p className="text-[11px] text-slate-500 max-w-sm leading-relaxed">
+          To retrieve a predicted structure, switch to UniProt mode and enter the accession explicitly.
+        </p>
       </div>
     );
   }
