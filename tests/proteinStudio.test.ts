@@ -5,6 +5,7 @@ import {
   classifyStructureSource,
   describeMutation,
   extractLookupIds,
+  normalizeProteinAccession,
   parsePaeJson,
   parseProteinInput,
   plddtCategory,
@@ -17,6 +18,8 @@ MALWMRLLPLLALLALWGPDPAAAFVNQHLCGSHLVEALYLVCGERGFFYTPKTRREAED
 LQVGQVELGGGPGAGSLQPLALEGSLQKRGIVEQCCTSICSLYQLENYCN`;
 
 function testUniProtFastaParsing() {
+  assert.equal(normalizeProteinAccession('P01308.1'), 'P01308');
+
   const parsed = parseProteinInput(insulinFasta);
   assert.equal(parsed.sequence.length, 110);
   assert.equal(parsed.header?.accession, 'P01308');
@@ -28,6 +31,11 @@ function testUniProtFastaParsing() {
   const tr = parseProteinInput('>tr|A0A024RBG1|A0A024RBG1_HUMAN Example protein OS=Homo sapiens\nMEEPQSDPSV');
   assert.equal(tr.header?.accession, 'A0A024RBG1');
   assert.equal(tr.header?.entryName, 'A0A024RBG1_HUMAN');
+
+  const ncbiVersioned = parseProteinInput(readFileSync('data/protein-studio-examples/P04637_P53_HUMAN_ncbi.fasta', 'utf8'));
+  assert.equal(ncbiVersioned.header?.accession, 'P04637');
+  assert.equal(ncbiVersioned.header?.entryName, 'P53_HUMAN');
+  assert.equal(ncbiVersioned.sequence.length, 393);
 
   const malformed = parseProteinInput('>not a uniprot header\nMEEPQSDPSV');
   assert.equal(malformed.header?.accession, undefined);

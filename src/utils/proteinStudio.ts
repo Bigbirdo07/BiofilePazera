@@ -75,6 +75,7 @@ export interface MutationDescription {
 const uniprotAccessionPattern = /\b([OPQ][0-9][A-Z0-9]{3}[0-9](?:-\d+)?|[A-NR-Z][0-9][A-Z][A-Z0-9]{2}[0-9](?:-\d+)?)\b/i;
 const pdbIdPattern = /\b([0-9][A-Z0-9]{3})\b/i;
 const standardAminoAcids = 'ACDEFGHIKLMNPQRSTVWY';
+export const normalizeProteinAccession = (accession: string) => accession.trim().replace(/\.\d+$/, '').toUpperCase();
 
 const aa3ToAa1: Record<string, string> = {
   ALA: 'A',
@@ -127,9 +128,9 @@ export function parseFastaHeader(headerLine: string): ParsedHeaderInfo {
   if (!headerLine.trim()) return result;
 
   const header = headerLine.trim().replace(/^>/, '').trim();
-  const dbMatch = header.match(/^(?:sp|tr)\|([A-Z0-9]{6,10}(?:-\d+)?)\|(\S+)\s+(.*)$/i);
+  const dbMatch = header.match(/^(?:sp|tr)\|([A-Z0-9]{6,10}(?:-\d+)?(?:\.\d+)?)\|(\S+)\s+(.*)$/i);
   if (dbMatch) {
-    result.accession = dbMatch[1].toUpperCase();
+    result.accession = normalizeProteinAccession(dbMatch[1]);
     result.entryName = dbMatch[2];
     const rest = dbMatch[3];
     result.organism = rest.match(/OS=([^=]+?)(?=\s+[A-Z]{2}=|$)/)?.[1]?.trim();
@@ -155,7 +156,7 @@ export function parseFastaHeader(headerLine: string): ParsedHeaderInfo {
 
   const accMatch = header.match(uniprotAccessionPattern);
   if (accMatch) {
-    result.accession = accMatch[1].toUpperCase();
+    result.accession = normalizeProteinAccession(accMatch[1]);
     const withoutAccession = header.replace(accMatch[1], '').trim();
     if (withoutAccession) result.proteinName = withoutAccession;
   }
@@ -165,7 +166,7 @@ export function parseFastaHeader(headerLine: string): ParsedHeaderInfo {
 
 export function extractLookupIds(text: string): { uniprotAccessions: string[]; pdbIds: string[] } {
   const uniprotAccessions = Array.from(new Set(
-    Array.from(text.matchAll(new RegExp(uniprotAccessionPattern.source, 'gi'))).map((match) => match[1].toUpperCase()),
+    Array.from(text.matchAll(new RegExp(uniprotAccessionPattern.source, 'gi'))).map((match) => normalizeProteinAccession(match[1])),
   ));
   const pdbIds = Array.from(new Set(
     Array.from(text.matchAll(new RegExp(pdbIdPattern.source, 'gi')))

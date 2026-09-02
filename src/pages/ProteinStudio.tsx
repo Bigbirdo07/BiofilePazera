@@ -32,6 +32,7 @@ import {
   getStructureMetricLabel,
   hasProteinProperties,
   extractLookupIds,
+  normalizeProteinAccession,
   parseFastaHeader,
   parsePaeJson,
   parsePdbAtoms,
@@ -301,7 +302,7 @@ export const ProteinStudio: React.FC<ProteinStudioProps> = ({ onNavigate }) => {
   };
 
   const handleFetchUniProt = async (overrideAccession?: string) => {
-    const accession = (overrideAccession || activeProtein?.accession || uniprotAccession).trim().toUpperCase();
+    const accession = normalizeProteinAccession(overrideAccession || activeProtein?.accession || uniprotAccession);
     if (!/^[A-Z0-9]{6,10}(?:-\d+)?$/.test(accession)) {
       setExecutionState('error');
       setErrorMessage(`"${accession}" is not recognized as a valid UniProt accession format.`);
