@@ -158,13 +158,130 @@ export function parseFastaHeader(headerLine: string): ParsedHeaderInfo {
 
   const accMatch = header.match(uniprotAccessionPattern);
   if (accMatch) {
+
     result.accession = normalizeProteinAccession(accMatch[1]);
     const withoutAccession = header.replace(accMatch[1], '').trim();
     if (withoutAccession) result.proteinName = withoutAccession;
   }
 
+  // RefSeq / NCBI Accession matching e.g. NP_000198.1, YP_009724390.1, NM_000207.3
+  const refSeqMatch = header.match(/\b([A-Z]{2}_\d+(?:\.\d+)?)\b/i);
+  if (refSeqMatch && !result.accession) {
+    result.accession = refSeqMatch[1].toUpperCase();
+  }
+
   return result;
 }
+
+export interface MappedAccessionResult {
+  accession: string;
+  proteinName?: string;
+  organism?: string;
+  mappedFrom?: string;
+}
+
+export async function resolveUniProtAccession(
+  rawIdentifier: string,
+  headerLine?: string,
+  _sequence?: string
+): Promise<MappedAccessionResult | null> {
+  const cleanId = rawIdentifier.trim();
+
+  // 1. Direct UniProt Accession match (e.g. P01308, P04637, P0DTC2)
+  if (/^[OPQ][0-9][A-Z0-9]{3}[0-9]$/i.test(cleanId) || /^[A-NR-Z][0-9][A-Z][A-Z0-9]{2}[0-9]$/i.test(cleanId)) {
+    return { accession: cleanId.toUpperCase() };
+  }
+
+  // 2. Query UniProt REST API for RefSeq / GenBank / mRNA accessions (e.g. NP_000198.1, NP_000537.3, NM_000207.3, YP_009724390.1)
+  if (cleanId.length >= 4) {
+    try {
+      const url = `https://rest.uniprot.org/uniprotkb/search?query=${encodeURIComponent(cleanId)}&format=json&fields=accession,id,protein_name,organism_name`;
+      const res = await fetch(url);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.results && data.results.length > 0) {
+          const top = data.results[0];
+          const acc = top.primaryAccession;
+          const name = top.proteinDescription?.recommendedName?.fullName?.value || top.proteinDescription?.submissionNames?.[0]?.fullName?.value;
+          const org = top.organism?.scientificName;
+          if (acc) {
+            return {
+              accession: acc,
+              proteinName: name,
+              organism: org,
+              mappedFrom: cleanId,
+            };
+          }
+        }
+      }
+    } catch (_e) {
+      // Ignore network errors and continue cascade
+    }
+  }
+
+  // 3. Query UniProt REST API using header keywords if header is present
+  if (headerLine && headerLine.trim()) {
+    const cleanHeader = headerLine.replace(/^>/, '').trim();
+    const words = cleanHeader.split(/\s+/).filter(w => w.length > 3 && !w.includes('|')).slice(0, 3).join(' ');
+    if (words) {
+      try {
+        const url = `https://rest.uniprot.org/uniprotkb/search?query=${encodeURIComponent(words)}&format=json&fields=accession,id,protein_name,organism_name`;
+        const res = await fetch(url);
+        if (res.ok) {
+          const data = await res.json();
+          if (data.results && data.results.length > 0) {
+            const top = data.results[0];
+            const acc = top.primaryAccession;
+            const name = top.proteinDescription?.recommendedName?.fullName?.value;
+            const org = top.organism?.scientificName;
+            if (acc) {
+              return {
+                accession: acc,
+                proteinName: name,
+                organism: org,
+                mappedFrom: words,
+              };
+            }
+          }
+        }
+      } catch (_e) {}
+    }
+  }
+
+  return null;
+}
+
+const codonTable: Record<string, string> = {
+  ATT: 'I', ATC: 'I', ATA: 'I', CTT: 'L', CTC: 'L', CTA: 'L', CTG: 'L', TTA: 'L', TTG: 'L',
+  GTT: 'V', GTC: 'V', GTA: 'V', GTG: 'V', TTT: 'F', TTC: 'F', ATG: 'M', TGT: 'C', TGC: 'C',
+  GCT: 'A', GCC: 'A', GCA: 'A', GCG: 'A', GGT: 'G', GGC: 'G', GGA: 'G', GGG: 'G', CCT: 'P',
+  CCC: 'P', CCA: 'P', CCG: 'P', ACT: 'T', ACC: 'T', ACA: 'T', ACG: 'T', TCT: 'S', TCC: 'S',
+  TCA: 'S', TCG: 'S', AGT: 'S', AGC: 'S', TAT: 'Y', TAC: 'Y', TGG: 'W', CAA: 'Q', CAG: 'Q',
+  AAT: 'N', AAC: 'N', CAT: 'H', CAC: 'H', GAA: 'E', GAG: 'E', GAT: 'D', GAC: 'D', AAA: 'K',
+  AAG: 'K', CGT: 'R', CGC: 'R', CGA: 'R', CGG: 'R', AGA: 'R', AGG: 'R', TAA: '*', TAG: '*', TGA: '*'
+};
+
+export function translateNucleotideToProtein(dnaSeq: string): string {
+  const cleanDna = dnaSeq.toUpperCase().replace(/U/g, 'T').replace(/[^ATCG]/g, '');
+  let bestProtein = '';
+
+  for (let frame = 0; frame < 3; frame++) {
+    let currentSeq = '';
+    for (let i = frame; i + 2 < cleanDna.length; i += 3) {
+      const codon = cleanDna.substring(i, i + 3);
+      const aa = codonTable[codon] || 'X';
+      if (aa === '*') {
+        if (currentSeq.length > bestProtein.length) bestProtein = currentSeq;
+        currentSeq = '';
+      } else {
+        currentSeq += aa;
+      }
+    }
+    if (currentSeq.length > bestProtein.length) bestProtein = currentSeq;
+  }
+  return bestProtein || cleanDna;
+}
+
 
 export function extractLookupIds(text: string): { uniprotAccessions: string[]; pdbIds: string[] } {
   const uniprotAccessions = Array.from(new Set(

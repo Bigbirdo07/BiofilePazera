@@ -12,6 +12,7 @@ interface Pdb3DViewerProps {
   colorModeOverride?: 'plddt' | 'chain' | 'spectrum' | 'bfactor';
   renderModeOverride?: 'ribbon' | 'trace' | 'spheres';
   detectedAccession?: string;
+  mappedFrom?: string;
   detectedProteinName?: string;
   detectedOrganism?: string;
   onFetchAlphaFoldRequested?: (accession: string) => void;
@@ -19,6 +20,7 @@ interface Pdb3DViewerProps {
   onResidueSelected?: (atom: ProteinAtom) => void;
   className?: string;
 }
+
 
 export const Pdb3DViewer: React.FC<Pdb3DViewerProps> = ({
   pdbText = '',
@@ -28,6 +30,7 @@ export const Pdb3DViewer: React.FC<Pdb3DViewerProps> = ({
   colorModeOverride,
   renderModeOverride,
   detectedAccession,
+  mappedFrom,
   detectedProteinName,
   detectedOrganism,
   onFetchAlphaFoldRequested,
@@ -311,8 +314,13 @@ export const Pdb3DViewer: React.FC<Pdb3DViewerProps> = ({
           </p>
 
           <h5 className="text-base font-bold text-slate-100 mb-1 font-mono">
-            AlphaFold DB structure may be available for {detectedAccession}
+            AlphaFold DB structure available for {detectedAccession}
           </h5>
+          {mappedFrom && (
+            <div className="text-[11px] font-semibold text-sky-400 bg-sky-950/80 border border-sky-800/80 px-2.5 py-0.5 rounded mb-2 font-mono">
+              Mapped from RefSeq {mappedFrom} → UniProt {detectedAccession}
+            </div>
+          )}
           <p className="text-xs text-slate-400 max-w-md leading-relaxed mb-6 font-medium">
             {detectedProteinName || 'Protein'} {detectedOrganism ? `• ${detectedOrganism}` : ''}
           </p>
@@ -322,7 +330,7 @@ export const Pdb3DViewer: React.FC<Pdb3DViewerProps> = ({
             className="px-6 py-3 bg-gradient-to-r from-sky-600 to-blue-600 hover:from-sky-500 hover:to-blue-500 text-white rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center space-x-2 shadow-lg hover:shadow-sky-500/20"
           >
             <Globe className="w-4 h-4" />
-            <span>Fetch Structure</span>
+            <span>Fetch & Render 3D Structure — ONLINE</span>
           </button>
           <span className="text-[10px] text-slate-500 font-mono mt-3">Contacts EMBL-EBI AlphaFold DB using accession {detectedAccession}</span>
         </div>
@@ -336,18 +344,22 @@ export const Pdb3DViewer: React.FC<Pdb3DViewerProps> = ({
         </div>
 
         <h4 className="text-base font-bold text-slate-200 mb-1">
-          No 3D coordinates loaded
+          No UniProt accession or database match found
         </h4>
-        <p className="text-xs text-slate-400 max-w-md leading-relaxed mb-6">
-          Protein sequences contain amino-acid information but do not define a unique 3D structure.
+        <p className="text-xs text-slate-400 max-w-md leading-relaxed mb-4">
+          A UniProt mapping is required to retrieve an AlphaFold DB structure.
         </p>
 
-        <p className="text-[11px] text-slate-400 max-w-sm leading-relaxed">
-          No UniProt accession detected. AlphaFold DB lookup requires a UniProt accession, such as P01308 or P04637.
-        </p>
+        <div className="p-3 bg-slate-900/80 border border-slate-800 rounded-lg text-[11px] text-slate-400 max-w-md font-mono text-left space-y-1">
+          <div className="font-bold text-slate-300">How to load a 3D structure:</div>
+          <div>• Header contains UniProt ID (e.g. P01308)</div>
+          <div>• Header contains RefSeq ID (e.g. NP_000198.1)</div>
+          <div>• Upload a local .pdb or .mmcif structure file</div>
+        </div>
       </div>
     );
   }
+
 
 
   return (

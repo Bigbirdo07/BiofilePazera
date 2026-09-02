@@ -39,6 +39,8 @@ import {
   parseProteinInput,
   summarizePlddt,
   validateMutationInput,
+  resolveUniProtAccession,
+  translateNucleotideToProtein,
 } from '../utils/proteinStudio';
 
 export { parseFastaHeader };
@@ -61,6 +63,7 @@ interface SelectedFile {
 interface ActiveProtein {
   title: string;
   accession?: string;
+  mappedFrom?: string;
   entryName?: string;
   proteinName?: string;
   organism?: string;
@@ -71,10 +74,12 @@ interface ActiveProtein {
   structureType: string;
   pdbText: string;
   sequence: string;
+  rawFastaText?: string;
   sequenceLabel: string;
   chains: string[];
   atoms: ProteinAtom[];
 }
+
 
 interface AlphaFoldMetadata {
   pdbUrl?: string;
@@ -400,44 +405,54 @@ export const ProteinStudio: React.FC<ProteinStudioProps> = ({ onNavigate }) => {
     const { id } = startRequest();
     try {
       const lookupIds = extractLookupIds(`${sequenceFile?.name || ''}\n${raw}`);
-      const parsed = parseProteinInput(raw);
-      if (!raw.trim().startsWith('>') && lookupIds.uniprotAccessions.length > 0 && parsed.sequence.length > 40) {
-        const accession = lookupIds.uniprotAccessions[0];
-        setInputMode('uniprot');
-        setUniprotAccession(accession);
-        setExecutionState('idle');
-        setNoticeMessage(`UniProt accession ${accession} detected in this text file.`);
-        setNoticeDetails('Click Fetch Structure to retrieve the AlphaFold DB model online. No network request has been made.');
-        return;
+      let parsed = parseProteinInput(raw);
+
+      // 1. Nucleotide mRNA Automatic Translation
+      let isTranslated = false;
+      let targetSequence = parsed.sequence;
+      if (parsed.nucleotideWarning || (parsed.sequence.length > 20 && (parsed.sequence.match(/[ACGTU]/g) || []).length / parsed.sequence.length > 0.85)) {
+        targetSequence = translateNucleotideToProtein(parsed.sequence);
+        isTranslated = true;
+        setNoticeMessage(`Nucleotide mRNA detected — Translated to protein sequence (${targetSequence.length} aa).`);
       }
-      if (!parsed.sequence) throw new Error('No amino-acid sequence was found.');
-      if (parsed.nucleotideWarning) {
-        setErrorMessage('This sequence appears to be nucleotide DNA/RNA rather than protein amino acids.');
-      }
+
+      if (!targetSequence) throw new Error('No valid sequence could be extracted or translated.');
+
+      // 2. Resolve Identifier Mapping (UniProt, RefSeq, GenBank)
       const header = parsed.header;
-      const accession = header?.accession || lookupIds.uniprotAccessions[0];
+      const rawAcc = header?.accession || lookupIds.uniprotAccessions[0] || sequenceFile?.name.split('.')[0];
+      const resolvedMapping = await resolveUniProtAccession(rawAcc || '', header?.headerRaw, targetSequence);
+
+      const finalAccession = resolvedMapping?.accession || header?.accession || (lookupIds.uniprotAccessions.length > 0 ? lookupIds.uniprotAccessions[0] : undefined);
+      const mappedFrom = resolvedMapping?.mappedFrom || (finalAccession !== rawAcc ? rawAcc : undefined);
+      const finalProteinName = resolvedMapping?.proteinName || header?.proteinName || 'Protein sequence';
+      const finalOrganism = resolvedMapping?.organism || header?.organism;
+
       setActiveProtein({
-        title: accession ? `${accession} · ${header?.entryName || header?.proteinName || 'Protein sequence'}` : sequenceFile?.name || 'Analyzed Protein Sequence',
-        accession,
+        title: finalAccession ? `${finalAccession} · ${header?.entryName || finalProteinName}` : sequenceFile?.name || 'Analyzed Protein Sequence',
+        accession: finalAccession,
+        mappedFrom,
         entryName: header?.entryName,
-        proteinName: header?.proteinName,
-        organism: header?.organism,
+        proteinName: finalProteinName,
+        organism: finalOrganism,
         gene: header?.gene,
         sourceType: 'SEQUENCE_ONLY',
-        sourceLabel: header?.pdbId ? `Protein Sequence · PDB ${header.pdbId}` : 'Protein Sequence',
+        sourceLabel: isTranslated ? 'Translated mRNA Sequence' : header?.pdbId ? `Protein Sequence · PDB ${header.pdbId}` : 'Protein Sequence',
         locationLabel: 'LOCAL',
         structureType: 'No coordinates',
         pdbText: '',
-        sequence: parsed.sequence,
-        sequenceLabel: 'Sequence-only amino-acid input',
+        sequence: targetSequence,
+        rawFastaText: raw,
+        sequenceLabel: isTranslated ? 'Translated protein amino-acid sequence' : 'Sequence-only amino-acid input',
         chains: [],
         atoms: [],
       });
-      setProperties(await calculateProteinProperties(parsed.sequence));
+      setProperties(await calculateProteinProperties(targetSequence));
       if (!isLatestRequest(id)) return;
       setActiveTab('structure');
       setExecutionState('idle');
     } catch (err) {
+
       if (!isLatestRequest(id)) return;
       setExecutionState('error');
       setErrorMessage('Invalid FASTA or amino-acid sequence input.');
@@ -650,8 +665,10 @@ export const ProteinStudio: React.FC<ProteinStudioProps> = ({ onNavigate }) => {
                     colorModeOverride={colorMode}
                     renderModeOverride={renderMode}
                     detectedAccession={activeProtein.accession}
+                    mappedFrom={activeProtein.mappedFrom}
                     detectedProteinName={activeProtein.proteinName}
                     detectedOrganism={activeProtein.organism}
+
                     onFetchAlphaFoldRequested={(acc) => handleFetchUniProt(acc)}
                     highlightedResidue={highlightedResidue}
                     onResidueSelected={(atom) => {
@@ -713,14 +730,25 @@ const OnlineBadge = () => (
 );
 
 const FileCard = ({ file, onClear }: { file: SelectedFile; onClear: () => void }) => (
-  <div className="p-3 bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-lg flex items-center justify-between text-xs gap-3">
-    <div className="min-w-0">
-      <div className="font-bold font-mono truncate">{file.name}</div>
-      <div className="text-[10px] text-slate-500 font-mono">{file.format} · {file.size ? `${(file.size / 1024).toFixed(1)} KB` : 'content pending'}</div>
+  <div className="p-3 bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-lg space-y-2 text-xs">
+    <div className="flex items-center justify-between gap-3">
+      <div className="min-w-0">
+        <div className="font-bold font-mono truncate">{file.name}</div>
+        <div className="text-[10px] text-slate-500 font-mono">{file.format} · {file.size ? `${(file.size / 1024).toFixed(1)} KB` : 'content pending'}</div>
+      </div>
+      <button onClick={onClear} className="text-rose-600 hover:underline text-[11px] font-semibold">Remove</button>
     </div>
-    <button onClick={onClear} className="text-rose-600 hover:underline text-[11px] font-semibold">Remove</button>
+    {file.content && (
+      <div className="border-l-2 border-sky-500 pl-2">
+        <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-500 mb-1">FASTA preview</div>
+        <pre className="p-2 bg-slate-900 text-slate-200 rounded font-mono text-[10px] max-h-20 overflow-y-auto leading-relaxed whitespace-pre-wrap select-all border border-slate-800">
+          {file.content.split('\n').slice(0, 4).join('\n')}
+        </pre>
+      </div>
+    )}
   </div>
 );
+
 
 const LoadingSteps = ({ steps }: { steps: Record<LoadStep, 'idle' | 'loading' | 'done' | 'error'> }) => {
   const label = (state: string) => (state === 'done' ? '✓' : state === 'loading' ? '○' : state === 'error' ? '!' : '○');
@@ -926,21 +954,43 @@ const SequenceTab = ({ protein, properties, copiedSeq, copiedFasta, onCopy, onSe
       <div>
         <h4 className="font-bold">Protein Sequence</h4>
         <p className="text-xs text-slate-500">{protein.sequenceLabel}</p>
+        {protein.mappedFrom && (
+          <div className="text-[11px] font-semibold text-sky-600 dark:text-sky-400 mt-1 font-mono">
+            Mapped from RefSeq {protein.mappedFrom} → UniProt {protein.accession}
+          </div>
+        )}
       </div>
       <div className="flex gap-2">
         <button onClick={() => onCopy(false)} className="px-2.5 py-1 bg-slate-100 dark:bg-slate-800 rounded text-xs font-semibold flex items-center gap-1">{copiedSeq ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}Copy Sequence</button>
         <button onClick={() => onCopy(true)} className="px-2.5 py-1 bg-slate-100 dark:bg-slate-800 rounded text-xs font-semibold flex items-center gap-1">{copiedFasta ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}Copy FASTA</button>
       </div>
     </div>
-    <div className="p-3 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg max-h-56 overflow-y-auto font-mono text-xs leading-relaxed">
-      {protein.sequence.split('').map((aa, idx) => (
-        <button key={idx} onClick={() => onSelectResidue(idx + 1)} className="inline-block px-0.5 hover:bg-yellow-100 dark:hover:bg-yellow-900 rounded" title={`Residue ${idx + 1}: ${aa}`}>{aa}</button>
-      ))}
+
+    {protein.rawFastaText && (
+      <details className="group border border-slate-200 dark:border-slate-800 rounded-lg overflow-hidden">
+        <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-3 py-2 bg-slate-50 dark:bg-slate-900/70 text-[11px] font-semibold text-slate-600 dark:text-slate-300">
+          <span>Uploaded FASTA</span>
+          <span className="text-[10px] font-mono text-slate-400 group-open:text-sky-500">View full text</span>
+        </summary>
+        <pre className="p-3 bg-slate-950 text-slate-100 max-h-56 overflow-auto font-mono text-[11px] whitespace-pre-wrap select-all leading-relaxed border-t border-slate-800">
+          {protein.rawFastaText}
+        </pre>
+      </details>
+    )}
+
+    <div className="space-y-1">
+      <div className="text-[11px] font-semibold text-slate-500">Interactive Residue View ({protein.sequence.length} aa)</div>
+      <div className="p-3 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg max-h-56 overflow-y-auto font-mono text-xs leading-relaxed">
+        {protein.sequence.split('').map((aa, idx) => (
+          <button key={idx} onClick={() => onSelectResidue(idx + 1)} className="inline-block px-0.5 hover:bg-yellow-100 dark:hover:bg-yellow-900 rounded" title={`Residue ${idx + 1}: ${aa}`}>{aa}</button>
+        ))}
+      </div>
     </div>
     {properties && <HydropathyChart properties={properties} />}
     {properties && <Composition properties={properties} />}
   </div>
 );
+
 
 const Composition = ({ properties }: { properties: ProteinProperties }) => (
   <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
