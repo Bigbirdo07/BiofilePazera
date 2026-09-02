@@ -93,10 +93,6 @@ interface AlphaFoldMetadata {
   sequence?: string;
 }
 
-const insulinFasta = `>sp|P01308|INS_HUMAN Insulin OS=Homo sapiens OX=9606 GN=INS PE=1 SV=1
-MALWMRLLPLLALLALWGPDPAAAFVNQHLCGSHLVEALYLVCGERGFFYTPKTRREAED
-LQVGQVELGGGPGAGSLQPLALEGSLQKRGIVEQCCTSICSLYQLENYCN`;
-
 export const ProteinStudio: React.FC<ProteinStudioProps> = ({ onNavigate }) => {
   const [inputMode, setInputMode] = useState<InputMode>('structure');
   const [activeTab, setActiveTab] = useState<WorkspaceTab>('structure');
@@ -624,15 +620,24 @@ export const ProteinStudio: React.FC<ProteinStudioProps> = ({ onNavigate }) => {
               </div>
               <FileUploader accept=".fasta,.fa,.faa,.txt" label="Drop protein FASTA" description="Supported: .fasta, .fa, .faa, .txt" onFileSelected={handleSequenceFiles} />
               {sequenceFile && <FileCard file={sequenceFile} onClear={() => setSequenceFile(null)} />}
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between gap-3">
+                  <label htmlFor="protein-sequence-text" className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                    {sequenceFile ? 'Uploaded FASTA' : 'Paste FASTA or sequence'}
+                  </label>
+                  {sequenceFile && <span className="text-[10px] font-mono text-slate-400">Loaded from file</span>}
+                </div>
               <textarea
-                value={pastedSequence}
+                id="protein-sequence-text"
+                value={sequenceFile?.content || pastedSequence}
                 onChange={(e) => {
                   setPastedSequence(e.target.value);
                   if (e.target.value.trim()) setSequenceFile(null);
                 }}
-                placeholder={insulinFasta}
-                className="w-full h-32 p-2.5 font-mono text-xs bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-500"
+                placeholder="Paste a FASTA header and amino-acid sequence here..."
+                className="w-full h-40 p-3 font-mono text-[11px] leading-relaxed bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-500 resize-y"
               />
+              </div>
               <button disabled={(!sequenceFile && !pastedSequence.trim()) || executionState === 'loading'} onClick={handleAnalyzeSequence} className="w-full py-2.5 bg-sky-600 hover:bg-sky-700 text-white rounded-lg text-xs font-bold disabled:opacity-50 flex items-center justify-center gap-2">
                 {executionState === 'loading' ? <RefreshCw className="w-4 h-4 animate-spin" /> : <FileText className="w-4 h-4" />}
                 <span>Analyze Sequence</span>
@@ -738,14 +743,6 @@ const FileCard = ({ file, onClear }: { file: SelectedFile; onClear: () => void }
       </div>
       <button onClick={onClear} className="text-rose-600 hover:underline text-[11px] font-semibold">Remove</button>
     </div>
-    {file.content && (
-      <div className="border-l-2 border-sky-500 pl-2">
-        <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-500 mb-1">FASTA preview</div>
-        <pre className="p-2 bg-slate-900 text-slate-200 rounded font-mono text-[10px] max-h-20 overflow-y-auto leading-relaxed whitespace-pre-wrap select-all border border-slate-800">
-          {file.content.split('\n').slice(0, 4).join('\n')}
-        </pre>
-      </div>
-    )}
   </div>
 );
 
