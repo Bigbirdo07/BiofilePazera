@@ -12,6 +12,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
             detect_sequence_type_cmd,
+            read_text_file_cmd,
             transform_sequence_cmd,
             translate_sequence_cmd,
             calculate_sequence_stats_cmd,

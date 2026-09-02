@@ -1,6 +1,7 @@
 import React, { useRef, useState } from 'react';
 import { UploadCloud, FileText, CheckCircle2, X } from 'lucide-react';
 import { open } from '@tauri-apps/plugin-dialog';
+import { invoke } from '@tauri-apps/api/core';
 
 interface FileUploaderProps {
   accept?: string;
@@ -66,9 +67,18 @@ export const FileUploader: React.FC<FileUploaderProps> = ({
         });
         if (selected) {
           const paths = Array.isArray(selected) ? selected : [selected];
-          const results = paths.map((p) => ({
-            path: p,
-            name: p.split('/').pop() || p.split('\\').pop() || p,
+          const results = await Promise.all(paths.map(async (p) => {
+            let content: string | undefined;
+            try {
+              content = await invoke<string>('read_text_file_cmd', { filePath: p });
+            } catch {
+              // Binary or unreadable files can still be passed to path-based tools.
+            }
+            return {
+              path: p,
+              name: p.split('/').pop() || p.split('\\').pop() || p,
+              content,
+            };
           }));
           onFileSelected(results);
           return;

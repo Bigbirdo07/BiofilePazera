@@ -6,6 +6,11 @@ use crate::bio::split::{split_sequence_file, SplitMode, SplitResult};
 use crate::bio::validate::{validate_file, ValidationReport};
 
 #[tauri::command]
+pub fn read_text_file_cmd(file_path: String) -> Result<String, String> {
+    std::fs::read_to_string(&file_path).map_err(|e| format!("Could not read selected file: {}", e))
+}
+
+#[tauri::command]
 pub fn validate_file_cmd(file_path: String) -> Result<ValidationReport, String> {
     validate_file(&file_path).map_err(|e| format!("Validation error: {}", e))
 }
