@@ -5,9 +5,11 @@ import {
   classifyStructureSource,
   describeMutation,
   extractLookupIds,
+  findNearbyResidues,
   normalizeProteinAccession,
   parsePaeJson,
   parseProteinInput,
+  parseUniProtBiology,
   plddtCategory,
   summarizePlddt,
   validateMutationInput,
@@ -114,6 +116,35 @@ function testPaeParser() {
   assert.throws(() => parsePaeJson('{bad json'));
 }
 
+function testUniProtBiologyParser() {
+  const biology = parseUniProtBiology({
+    primaryAccession: 'P01308',
+    proteinDescription: { recommendedName: { fullName: { value: 'Insulin' } } },
+    genes: [{ geneName: { value: 'INS' } }],
+    organism: { scientificName: 'Homo sapiens' },
+    sequence: { length: 110 },
+    comments: [
+      { commentType: 'FUNCTION', text: { value: 'Regulates glucose metabolism.' } },
+      { commentType: 'SUBCELLULAR LOCATION', text: [{ value: 'Secreted.' }] },
+    ],
+    features: [
+      { type: 'Signal peptide', location: { start: { value: 1 }, end: { value: 24 } } },
+      { type: 'Disulfide bond', description: 'A-B chain bond', location: { start: { value: 31 }, end: { value: 96 } } },
+    ],
+    uniProtKBCrossReferences: [
+      { database: 'PDB', id: '1ZNI', properties: [{ key: 'Method', value: 'X-ray' }, { key: 'Resolution', value: '1.5 A' }] },
+      { database: 'RefSeq', id: 'NP_000198.1' },
+    ],
+  });
+  assert.equal(biology?.proteinName, 'Insulin');
+  assert.equal(biology?.functionText, 'Regulates glucose metabolism.');
+  assert.equal(biology?.subcellularLocation, 'Secreted.');
+  assert.deepEqual(biology?.features[0], { type: 'Signal peptide', description: undefined, start: 1, end: 24 });
+  assert.deepEqual(biology?.experimentalStructures, [{ id: '1ZNI', method: 'X-ray', resolution: '1.5 A' }]);
+  assert.equal(parseUniProtBiology({ primaryAccession: 'P01308' })?.features.length, 0);
+  assert.equal(parseUniProtBiology({}), null);
+}
+
 function testMutationValidation() {
   const seq = 'MALWMRLLPLLALLALWGPDPAAAFVNQHLCGSHLVEALYLVCGERGFFYTPKTRREAEDLQVGQVELGGGPGAGSLQPLALEGSLQKRGIVEQCCTSICSLYQLENYCN';
   const valid = validateMutationInput('A24S', seq);
@@ -125,6 +156,16 @@ function testMutationValidation() {
   assert.equal(validateMutationInput('F999S', seq).ok, false);
   assert.equal(validateMutationInput('F24B', seq).ok, false);
   assert.equal(validateMutationInput('F24F', seq).ok, false);
+}
+
+function testNearbyResidues() {
+  const atoms = [
+    { serial: 1, name: 'CA', resName: 'ALA', chainID: 'A', resSeq: 1, residueIndex: 1, aa: 'A', x: 0, y: 0, z: 0, bFactor: null },
+    { serial: 2, name: 'CA', resName: 'GLY', chainID: 'A', resSeq: 2, residueIndex: 2, aa: 'G', x: 3, y: 0, z: 0, bFactor: null },
+    { serial: 3, name: 'CA', resName: 'SER', chainID: 'A', resSeq: 3, residueIndex: 3, aa: 'S', x: 8, y: 0, z: 0, bFactor: null },
+  ];
+  assert.deepEqual(findNearbyResidues(atoms, 1).map((atom) => atom.residueIndex), [2]);
+  assert.deepEqual(findNearbyResidues(atoms, 99), []);
 }
 
 function testStateResetInvariant() {
@@ -141,7 +182,9 @@ testInputClassification();
 testSourceSemantics();
 testPlddt();
 testPaeParser();
+testUniProtBiologyParser();
 testMutationValidation();
+testNearbyResidues();
 testStateResetInvariant();
 
 console.log('Protein Studio logic tests passed');

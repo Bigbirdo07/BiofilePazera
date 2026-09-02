@@ -51,6 +51,32 @@ export interface PaeMatrix {
   size: number;
 }
 
+export interface UniProtFeature {
+  type: string;
+  description?: string;
+  start: number;
+  end: number;
+}
+
+export interface ExperimentalStructureReference {
+  id: string;
+  method?: string;
+  resolution?: string;
+}
+
+export interface BiologyAnnotation {
+  accession: string;
+  proteinName?: string;
+  gene?: string;
+  organism?: string;
+  length?: number;
+  functionText?: string;
+  subcellularLocation?: string;
+  cofactors?: string;
+  features: UniProtFeature[];
+  experimentalStructures: ExperimentalStructureReference[];
+}
+
 export interface MutationValidation {
   ok: boolean;
   notation?: string;
@@ -391,6 +417,22 @@ export function extractChainsFromAtoms(atoms: ProteinAtom[]): string[] {
   return Array.from(new Set(atoms.map((atom) => atom.chainID).filter(Boolean))).sort();
 }
 
+export function findNearbyResidues(atoms: ProteinAtom[], residueIndex: number, distanceAngstroms = 4): ProteinAtom[] {
+  const target = atoms.find((atom) => atom.residueIndex === residueIndex);
+  if (!target) return [];
+  const maxDistanceSquared = distanceAngstroms ** 2;
+  const seen = new Set<number>();
+  return atoms.filter((atom) => {
+    if (atom.residueIndex === residueIndex || seen.has(atom.residueIndex)) return false;
+    const dx = atom.x - target.x;
+    const dy = atom.y - target.y;
+    const dz = atom.z - target.z;
+    if (dx * dx + dy * dy + dz * dz > maxDistanceSquared) return false;
+    seen.add(atom.residueIndex);
+    return true;
+  });
+}
+
 export function summarizePlddt(atoms: ProteinAtom[]): PlddtSummary {
   const values = atoms.map((atom) => atom.bFactor).filter((value): value is number => typeof value === 'number');
   const summary: PlddtSummary = {
@@ -446,6 +488,86 @@ export function parsePaeJson(raw: unknown, expectedLength?: number): PaeMatrix |
   }
 
   return { matrix: numericMatrix, max: maxValue, size: numericMatrix.length };
+}
+
+function uniprotLocationValue(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string' && Number.isFinite(Number(value))) return Number(value);
+  if (value && typeof value === 'object' && 'value' in value) return uniprotLocationValue(value.value);
+  return null;
+}
+
+function uniprotCommentText(comment: Record<string, unknown>): string | undefined {
+  const text = comment.text;
+  if (typeof text === 'string') return text;
+  if (text && typeof text === 'object' && 'value' in text) return String(text.value);
+  if (Array.isArray(text)) {
+    const values = text.map((item) => (item && typeof item === 'object' && 'value' in item ? String(item.value) : '')).filter(Boolean);
+    if (values.length) return values.join(' ');
+  }
+  return undefined;
+}
+
+export function parseUniProtBiology(raw: unknown): BiologyAnnotation | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const record = raw as Record<string, unknown>;
+  const accession = typeof record.primaryAccession === 'string' ? record.primaryAccession : undefined;
+  if (!accession) return null;
+
+  const organismRecord = record.organism as Record<string, unknown> | undefined;
+  const genes = Array.isArray(record.genes) ? record.genes : [];
+  const geneRecord = genes[0] as Record<string, unknown> | undefined;
+  const geneName = geneRecord?.geneName as Record<string, unknown> | undefined;
+  const sequenceRecord = record.sequence as Record<string, unknown> | undefined;
+  const proteinDescription = record.proteinDescription as Record<string, unknown> | undefined;
+  const recommendedName = proteinDescription?.recommendedName as Record<string, unknown> | undefined;
+  const fullName = recommendedName?.fullName as Record<string, unknown> | undefined;
+
+  const comments = (Array.isArray(record.comments) ? record.comments : []) as Record<string, unknown>[];
+  const commentText = (type: string) => uniprotCommentText(comments.find((comment) => comment.commentType === type) || {});
+
+  const features = (Array.isArray(record.features) ? record.features : [])
+    .map((feature): UniProtFeature | null => {
+      if (!feature || typeof feature !== 'object') return null;
+      const item = feature as Record<string, unknown>;
+      const location = item.location as Record<string, unknown> | undefined;
+      const position = uniprotLocationValue(location?.position);
+      const start = uniprotLocationValue(location?.start) ?? position;
+      const end = uniprotLocationValue(location?.end) ?? start;
+      if (!start || !end) return null;
+      return {
+        type: typeof item.type === 'string' ? item.type : 'Feature',
+        description: typeof item.description === 'string' ? item.description : undefined,
+        start,
+        end,
+      };
+    })
+    .filter((feature): feature is UniProtFeature => feature !== null);
+
+  const experimentalStructures = (Array.isArray(record.uniProtKBCrossReferences) ? record.uniProtKBCrossReferences : [])
+    .filter((reference): reference is Record<string, unknown> => Boolean(reference && typeof reference === 'object' && reference.database === 'PDB' && typeof reference.id === 'string'))
+    .map((reference) => {
+      const properties = Array.isArray(reference.properties) ? reference.properties as Record<string, unknown>[] : [];
+      const value = (key: string) => properties.find((property) => property.key === key)?.value;
+      return {
+        id: reference.id as string,
+        method: typeof value('Method') === 'string' ? value('Method') as string : undefined,
+        resolution: typeof value('Resolution') === 'string' ? value('Resolution') as string : undefined,
+      } satisfies ExperimentalStructureReference;
+    });
+
+  return {
+    accession,
+    proteinName: typeof fullName?.value === 'string' ? fullName.value : undefined,
+    gene: typeof geneName?.value === 'string' ? geneName.value : undefined,
+    organism: typeof organismRecord?.scientificName === 'string' ? organismRecord.scientificName : undefined,
+    length: typeof sequenceRecord?.length === 'number' ? sequenceRecord.length : undefined,
+    functionText: commentText('FUNCTION'),
+    subcellularLocation: commentText('SUBCELLULAR LOCATION'),
+    cofactors: commentText('COFACTOR'),
+    features,
+    experimentalStructures,
+  };
 }
 
 export function validateMutationInput(notation: string, sequence: string): MutationValidation {

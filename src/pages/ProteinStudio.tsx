@@ -21,6 +21,7 @@ import { FileUploader } from '../components/common/FileUploader';
 import { Pdb3DViewer } from '../components/common/Pdb3DViewer';
 import {
   MutationDescription,
+  BiologyAnnotation,
   PaeMatrix,
   ProteinAtom,
   StructureSourceType,
@@ -28,6 +29,7 @@ import {
   classifyStructureSource,
   describeMutation,
   extractChainsFromAtoms,
+  findNearbyResidues,
   formatPercent,
   getStructureMetricLabel,
   hasProteinProperties,
@@ -37,6 +39,7 @@ import {
   parsePaeJson,
   parsePdbAtoms,
   parseProteinInput,
+  parseUniProtBiology,
   summarizePlddt,
   validateMutationInput,
   resolveUniProtAccession,
@@ -50,7 +53,7 @@ interface ProteinStudioProps {
 }
 
 type InputMode = 'structure' | 'uniprot' | 'sequence';
-type WorkspaceTab = 'structure' | 'confidence' | 'sequence' | 'mutations';
+type WorkspaceTab = 'structure' | 'confidence' | 'biology' | 'sequence' | 'mutation';
 type LoadStep = 'metadata' | 'model' | 'confidence';
 
 interface SelectedFile {
@@ -103,6 +106,7 @@ export const ProteinStudio: React.FC<ProteinStudioProps> = ({ onNavigate }) => {
   const [activeProtein, setActiveProtein] = useState<ActiveProtein | null>(null);
   const [properties, setProperties] = useState<ProteinProperties | null>(null);
   const [pae, setPae] = useState<PaeMatrix | null>(null);
+  const [biology, setBiology] = useState<BiologyAnnotation | null>(null);
   const [selectedChain, setSelectedChain] = useState('ALL');
   const [renderMode, setRenderMode] = useState<'ribbon' | 'trace' | 'spheres'>('ribbon');
   const [colorMode, setColorMode] = useState<'plddt' | 'chain' | 'spectrum' | 'bfactor'>('chain');
@@ -148,6 +152,7 @@ export const ProteinStudio: React.FC<ProteinStudioProps> = ({ onNavigate }) => {
 
   const resetAlphaFoldState = () => {
     setPae(null);
+    setBiology(null);
     setColorMode('chain');
   };
 
@@ -188,6 +193,7 @@ export const ProteinStudio: React.FC<ProteinStudioProps> = ({ onNavigate }) => {
     setActiveProtein(null);
     setProperties(null);
     resetAlphaFoldState();
+    setBiology(null);
   };
 
   const handleStructureFiles = (files: { name: string; content?: string; file?: File }[]) => {
@@ -236,6 +242,7 @@ export const ProteinStudio: React.FC<ProteinStudioProps> = ({ onNavigate }) => {
     setActiveProtein(null);
     setProperties(null);
     resetAlphaFoldState();
+    setBiology(null);
     setMutationResult(null);
     clearErrors();
   };
@@ -253,6 +260,7 @@ export const ProteinStudio: React.FC<ProteinStudioProps> = ({ onNavigate }) => {
 
     clearErrors();
     resetAlphaFoldState();
+    setBiology(null);
     setExecutionState('loading');
     const { id } = startRequest();
     try {
@@ -306,6 +314,17 @@ export const ProteinStudio: React.FC<ProteinStudioProps> = ({ onNavigate }) => {
     };
   };
 
+  const fetchUniProtBiology = async (accession: string, signal: AbortSignal): Promise<BiologyAnnotation | null> => {
+    try {
+      const response = await fetch(`https://rest.uniprot.org/uniprotkb/${accession}.json`, { signal });
+      if (!response.ok) return null;
+      return parseUniProtBiology(await response.json());
+    } catch (error) {
+      if ((error as Error).name === 'AbortError') throw error;
+      return null;
+    }
+  };
+
   const handleFetchUniProt = async (overrideAccession?: string) => {
     const accession = normalizeProteinAccession(overrideAccession || activeProtein?.accession || uniprotAccession);
     if (!/^[A-Z0-9]{6,10}(?:-\d+)?$/.test(accession)) {
@@ -329,6 +348,8 @@ export const ProteinStudio: React.FC<ProteinStudioProps> = ({ onNavigate }) => {
       if (!metadata?.pdbUrl) throw new Error(`No AlphaFold DB model found for accession "${accession}".`);
       if (!isLatestRequest(id)) return;
       setLoadSteps({ metadata: 'done', model: 'loading', confidence: 'idle' });
+
+      const biologyData = await fetchUniProtBiology(accession, controller.signal);
 
       const pdbRes = await fetch(metadata.pdbUrl, { signal: controller.signal });
       if (!pdbRes.ok) throw new Error(`AlphaFold DB model request failed with HTTP ${pdbRes.status}.`);
@@ -369,6 +390,7 @@ export const ProteinStudio: React.FC<ProteinStudioProps> = ({ onNavigate }) => {
         atoms,
       });
       setPae(parsedPae);
+      setBiology(biologyData);
       setProperties(await calculateProteinProperties(sequence));
       setColorMode('plddt');
       setSelectedChain('ALL');
@@ -396,7 +418,8 @@ export const ProteinStudio: React.FC<ProteinStudioProps> = ({ onNavigate }) => {
     }
 
     clearErrors();
-    resetAlphaFoldState();
+      resetAlphaFoldState();
+      setBiology(null);
     setExecutionState('loading');
     const { id } = startRequest();
     try {
@@ -468,6 +491,7 @@ export const ProteinStudio: React.FC<ProteinStudioProps> = ({ onNavigate }) => {
     setMutationError(null);
     setMutationResult(description);
     setHighlightedResidue(validation.position || null);
+    setSelectedResidue(validation.position ? activeProtein.atoms.find((atom) => atom.residueIndex === validation.position) || null : null);
   };
 
   const copySequence = (asFasta: boolean) => {
@@ -707,7 +731,11 @@ export const ProteinStudio: React.FC<ProteinStudioProps> = ({ onNavigate }) => {
                 <SequenceTab protein={activeProtein} properties={properties} copiedSeq={copiedSeq} copiedFasta={copiedFasta} onCopy={copySequence} onSelectResidue={setHighlightedResidue} />
               )}
 
-              {activeTab === 'mutations' && (
+              {activeTab === 'biology' && (
+                <BiologyTab biology={biology} onSelectFeature={(position) => { setHighlightedResidue(position); setActiveTab('structure'); }} />
+              )}
+
+              {activeTab === 'mutation' && (
                 <MutationTab
                   notation={mutationNotation}
                   setNotation={setMutationNotation}
@@ -716,6 +744,7 @@ export const ProteinStudio: React.FC<ProteinStudioProps> = ({ onNavigate }) => {
                   error={mutationError}
                   highlightedResidue={highlightedResidue}
                   selectedAtom={selectedResidue}
+                  nearbyResidues={activeProtein.atoms.length && highlightedResidue ? findNearbyResidues(activeProtein.atoms, highlightedResidue) : []}
                   isAlphaFold={isAlphaFold}
                 />
               )}
@@ -814,7 +843,7 @@ const Metric = ({ label, value }: { label: string; value: string }) => (
 
 const TabBar = ({ activeTab, setActiveTab }: { activeTab: WorkspaceTab; setActiveTab: (tab: WorkspaceTab) => void }) => (
   <div className="flex flex-wrap gap-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-lg text-xs font-bold">
-    {(['structure', 'confidence', 'sequence', 'mutations'] as WorkspaceTab[]).map((tab) => (
+    {(['structure', 'confidence', 'biology', 'sequence', 'mutation'] as WorkspaceTab[]).map((tab) => (
       <button key={tab} onClick={() => setActiveTab(tab)} className={`px-3 py-2 rounded-md capitalize ${activeTab === tab ? 'bg-white dark:bg-slate-900 text-sky-600 shadow-xs' : 'text-slate-600 dark:text-slate-300'}`}>
         {tab}
       </button>
@@ -938,6 +967,85 @@ const PaeHeatmap = ({ pae }: { pae: PaeMatrix }) => {
   );
 };
 
+const BiologyTab = ({ biology, onSelectFeature }: { biology: BiologyAnnotation | null; onSelectFeature: (position: number) => void }) => {
+  if (!biology) {
+    return (
+      <div className="p-5 bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-800 rounded-lg">
+        <h4 className="font-bold">Biological Annotation</h4>
+        <p className="text-sm text-slate-500 mt-1">No annotation available. Load an AlphaFold model with a UniProt accession to retrieve curated UniProt context.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <section className="p-4 border border-slate-200 dark:border-slate-800 rounded-lg space-y-3">
+        <div>
+          <h4 className="font-bold">Identity</h4>
+          <p className="text-xs text-slate-500 mt-1">Curated UniProt annotation for {biology.accession}.</p>
+        </div>
+        <div className="grid grid-cols-2 xl:grid-cols-4 gap-3 text-xs">
+          <Metric label="PROTEIN" value={biology.proteinName || 'No annotation available'} />
+          <Metric label="GENE" value={biology.gene || 'No annotation available'} />
+          <Metric label="ORGANISM" value={biology.organism || 'No annotation available'} />
+          <Metric label="LENGTH" value={biology.length ? `${biology.length} aa` : '—'} />
+        </div>
+      </section>
+
+      <section className="p-4 border border-slate-200 dark:border-slate-800 rounded-lg space-y-3">
+        <div>
+          <h4 className="font-bold">Function & Cellular Context</h4>
+          <p className="text-xs text-slate-500 mt-1">Reported annotation, not an inference from the predicted structure.</p>
+        </div>
+        <BiologyText label="Function" value={biology.functionText} />
+        <BiologyText label="Subcellular location" value={biology.subcellularLocation} />
+        <BiologyText label="Cofactors" value={biology.cofactors} />
+      </section>
+
+      <section className="p-4 border border-slate-200 dark:border-slate-800 rounded-lg space-y-3">
+        <div>
+          <h4 className="font-bold">Regions & Features</h4>
+          <p className="text-xs text-slate-500 mt-1">Click a mapped feature to highlight its start position in the structure.</p>
+        </div>
+        {biology.features.length ? (
+          <div className="divide-y divide-slate-100 dark:divide-slate-800">
+            {biology.features.slice(0, 40).map((feature, index) => (
+              <div key={`${feature.type}-${feature.start}-${feature.end}-${index}`} className="flex items-center justify-between gap-3 py-2 text-xs">
+                <div className="min-w-0">
+                  <div className="font-semibold">{feature.type}</div>
+                  <div className="text-slate-500 truncate">{feature.description || 'No description available'}</div>
+                </div>
+                <button onClick={() => onSelectFeature(feature.start)} className="shrink-0 px-2 py-1 rounded bg-slate-100 dark:bg-slate-800 font-mono text-[11px] hover:bg-sky-100 dark:hover:bg-sky-950">{feature.start}{feature.end !== feature.start ? `–${feature.end}` : ''}</button>
+              </div>
+            ))}
+          </div>
+        ) : <p className="text-xs text-slate-500">No annotation available.</p>}
+      </section>
+
+      <section className="p-4 border border-slate-200 dark:border-slate-800 rounded-lg space-y-3">
+        <h4 className="font-bold">Experimental Structures</h4>
+        {biology.experimentalStructures.length ? (
+          <div className="grid md:grid-cols-2 gap-2">
+            {biology.experimentalStructures.slice(0, 20).map((structure) => (
+              <div key={structure.id} className="flex items-center justify-between gap-3 p-3 bg-slate-50 dark:bg-slate-800/60 rounded-lg text-xs">
+                <div><div className="font-mono font-bold">{structure.id}</div><div className="text-slate-500">{structure.method || 'Method unavailable'}{structure.resolution ? ` · ${structure.resolution}` : ''}</div></div>
+                <a href={`https://www.rcsb.org/structure/${structure.id}`} target="_blank" rel="noreferrer" className="text-sky-600 font-semibold">Open</a>
+              </div>
+            ))}
+          </div>
+        ) : <p className="text-xs text-slate-500">No annotation available.</p>}
+        <p className="text-[11px] text-slate-500">Structure overlay and RMSD comparison are deferred until sequence alignment and coordinate mapping can be validated.</p>
+      </section>
+
+      <InfoCard icon={<Info className="w-4 h-4 text-sky-600" />} title="Cellular Context Limitation" text="A structure does not represent the complete intracellular environment. Membranes, partners, modifications, pH, ionic conditions, and molecular crowding may change protein behavior." />
+    </div>
+  );
+};
+
+const BiologyText = ({ label, value }: { label: string; value?: string }) => (
+  <div className="text-xs"><div className="font-semibold text-slate-500">{label}</div><p className="mt-1 leading-relaxed">{value || 'No annotation available'}</p></div>
+);
+
 const SequenceTab = ({ protein, properties, copiedSeq, copiedFasta, onCopy, onSelectResidue }: {
   protein: ActiveProtein;
   properties: ProteinProperties | null;
@@ -1017,7 +1125,7 @@ const HydropathyChart = ({ properties }: { properties: ProteinProperties }) => (
   </div>
 );
 
-const MutationTab = ({ notation, setNotation, onInspect, result, error, highlightedResidue, selectedAtom, isAlphaFold }: {
+const MutationTab = ({ notation, setNotation, onInspect, result, error, highlightedResidue, selectedAtom, nearbyResidues, isAlphaFold }: {
   notation: string;
   setNotation: (value: string) => void;
   onInspect: () => void;
@@ -1025,6 +1133,7 @@ const MutationTab = ({ notation, setNotation, onInspect, result, error, highligh
   error: string | null;
   highlightedResidue: number | null;
   selectedAtom: ProteinAtom | null;
+  nearbyResidues: ProteinAtom[];
   isAlphaFold: boolean;
 }) => (
   <div className="space-y-4">
@@ -1050,6 +1159,9 @@ const MutationTab = ({ notation, setNotation, onInspect, result, error, highligh
       )}
       <div className="text-xs text-slate-500">Mutation location: {highlightedResidue ? `residue ${highlightedResidue}` : 'select or inspect a residue'}</div>
       {selectedAtom && <ResidueCard atom={selectedAtom} isAlphaFold={isAlphaFold} />}
+      {highlightedResidue && selectedAtom && (
+        <div className="text-xs"><div className="font-semibold text-slate-500">Nearby residues within 4 Å</div><div className="mt-1 font-mono">{nearbyResidues.length ? nearbyResidues.map((atom) => `${atom.aa}${atom.resSeq}`).join(' · ') : 'No coordinates available within 4 Å'}</div></div>
+      )}
     </div>
     <div className="p-4 bg-amber-50 dark:bg-amber-950/50 border border-amber-200 dark:border-amber-800 rounded-lg text-sm text-amber-900 dark:text-amber-200">
       <h4 className="font-bold">Mutation Interpretation</h4>

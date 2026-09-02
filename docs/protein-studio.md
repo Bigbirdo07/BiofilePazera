@@ -26,6 +26,7 @@ Online operations:
 - AlphaFold DB metadata retrieval;
 - AlphaFold DB coordinate retrieval;
 - AlphaFold DB confidence/PAE data retrieval.
+- UniProt curated biology and experimental-structure cross-reference retrieval.
 
 Online requests are explicit user actions. BioFile sends the accession identifier to external scientific databases. Local sequence and structure files are not uploaded.
 
@@ -71,6 +72,8 @@ are parsed locally to extract:
 
 If an accession is detected, Protein Studio offers an explicit online AlphaFold DB structure fetch. No network request occurs until the user clicks the fetch action.
 
+RefSeq protein accessions can be resolved through UniProt when a mapping is available. Transcript records such as `NM_000207.3` are translated locally before their protein mapping is used. The original identifier and resolved UniProt accession remain visible. A sequence with no reliable identifier or mapping remains sequence-only.
+
 ## AlphaFold DB Retrieval
 
 BioFile Toolkit retrieves existing AlphaFold DB model records. It does not run AlphaFold inference, generate new predictions, or upload local sequences for prediction.
@@ -98,6 +101,14 @@ AlphaFold DB currently provides PAE JSON with:
 - `max_predicted_aligned_error`: the maximum possible PAE value.
 
 Protein Studio validates the matrix shape, numeric values, maximum value, and expected residue count before rendering a heatmap. Missing or malformed PAE does not crash the workspace.
+
+## Biology
+
+When a UniProt accession is available, the Biology tab retrieves curated UniProt JSON and displays identity, gene, organism, function, subcellular location, cofactors, sequence features, and associated experimental PDB references when those fields exist. Missing fields are shown as `No annotation available`; missing data is not treated as proof that a feature is absent.
+
+Feature ranges can highlight corresponding sequence positions when numbering is compatible. Signal peptides, processed chains, isoforms, unresolved residues, and other numbering differences can prevent a direct mapping, so Protein Studio does not silently shift canonical positions.
+
+The experimental structure list links to deposited RCSB records. AlphaFold/experimental overlay and RMSD comparison are deferred until alignment and coordinate mapping are validated.
 
 ## Mutation Inspector
 
