@@ -1,6 +1,6 @@
 # BioFile Toolkit V1 — Scientific Methods & Mathematical Conventions
 
-**Version**: `1.0.0-rc.1`  
+**Version**: `1.0.0-rc.2`
 **Purpose**: Document all mathematical formulas, biological algorithms, and assumptions for scientific transparency and publication reproducibility.
 
 ---

@@ -1,6 +1,6 @@
 # BioFile Toolkit V1 — Quick Start Guide
 
-**Version**: `1.0.0-rc.1`  
+**Version**: `1.0.0-rc.2`
 **Target Audience**: Bench scientists, molecular biologists, and researchers seeking fast sequence utilities without command line complexity.
 
 ---

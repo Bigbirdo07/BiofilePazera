@@ -1,6 +1,6 @@
 # BioFile Toolkit V1 — Privacy & Network Boundary Declaration
 
-**Version**: `1.0.0-rc.1`
+**Version**: `1.0.0-rc.2`
 
 ---
 

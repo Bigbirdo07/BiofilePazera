@@ -27,7 +27,7 @@ export const RcFeedbackModal: React.FC<RcFeedbackModalProps> = ({ isOpen, onClos
 
 ## Tester Background
 - **Role**: ${role}
-- **BioFile Toolkit Version**: 1.0.0-rc.1
+- **BioFile Toolkit Version**: 1.0.0-rc.2
 - **OS**: macOS Darwin (arm64)
 - **Local Privacy Mode**: Active (No automated sequence telemetry)
 
@@ -78,7 +78,7 @@ ${finalFeedback}
                 Help & RC Feedback
               </h2>
               <p className="text-xs text-slate-500 dark:text-slate-400">
-                BioFile Toolkit 1.0.0-rc.1 — Tester Feedback Tool
+                BioFile Toolkit 1.0.0-rc.2 — Tester Feedback Tool
               </p>
             </div>
           </div>

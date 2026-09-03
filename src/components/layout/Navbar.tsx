@@ -48,7 +48,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           <ShieldCheck className="w-3.5 h-3.5" />
           <span>Local processing — sequence files remain on your computer.</span>
         </div>
-        <span className="text-[11px] font-semibold text-slate-500">v1.0.0-rc.1 (Local & Offline Mode)</span>
+        <span className="text-[11px] font-semibold text-slate-500">v1.0.0-rc.2 (Local & Offline Mode)</span>
       </div>
 
       {/* Main Navigation Bar */}
@@ -115,4 +115,3 @@ export const Navbar: React.FC<NavbarProps> = ({
     </header>
   );
 };
-

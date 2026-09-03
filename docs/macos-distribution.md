@@ -1,6 +1,6 @@
 # BioFile Toolkit V1 — macOS Packaging & Distribution Readiness
 
-**Version**: `1.0.0-rc.1`
+**Version**: `1.0.0-rc.2`
 
 ---
 
@@ -14,7 +14,7 @@ npm run tauri build
 ```
 
 The output artifacts will be placed in:
-`src-tauri/target/release/bundle/dmg/biofile-toolkit_1.0.0-rc.1_aarch64.dmg`  
+`src-tauri/target/release/bundle/dmg/biofile-toolkit_1.0.0-rc.2_aarch64.dmg`
 `src-tauri/target/release/bundle/macos/biofile-toolkit.app`
 
 ---
