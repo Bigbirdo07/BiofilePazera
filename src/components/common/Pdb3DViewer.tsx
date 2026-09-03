@@ -39,12 +39,27 @@ export const Pdb3DViewer: React.FC<Pdb3DViewerProps> = ({
   className = '',
 }) => {
 
+  const nglContainerRef = useRef<HTMLDivElement>(null);
+  const nglStageRef = useRef<any>(null);
+  const nglComponentRef = useRef<any>(null);
+  const nglModuleRef = useRef<any>(null);
+  const nglResizeObserverRef = useRef<ResizeObserver | null>(null);
+  // Retained only for the legacy rendering block below; the visible surface is NGL.
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const projectedRef = useRef<Array<{ px: number; py: number; atom: ProteinAtom }>>([]);
+  const onResidueSelectedRef = useRef(onResidueSelected);
   const [atoms, setAtoms] = useState<ProteinAtom[]>([]);
   const [renderMode, setRenderMode] = useState<'ribbon' | 'trace' | 'spheres'>('ribbon');
   const [colorMode, setColorMode] = useState<'plddt' | 'chain' | 'spectrum' | 'bfactor'>('plddt');
   const [autoRotate, setAutoRotate] = useState<boolean>(true);
+  const rotationRef = useRef<{ rx: number; ry: number }>({ rx: 0.3, ry: 0.5 });
+  const zoomRef = useRef<number>(1.0);
+  const isDraggingRef = useRef<boolean>(false);
+  const lastMouseRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
+
+  useEffect(() => {
+    onResidueSelectedRef.current = onResidueSelected;
+  }, [onResidueSelected]);
 
   // Sync prop overrides if provided
   useEffect(() => {
@@ -55,30 +70,7 @@ export const Pdb3DViewer: React.FC<Pdb3DViewerProps> = ({
     if (renderModeOverride) setRenderMode(renderModeOverride);
   }, [renderModeOverride]);
 
-  // 3D Camera & Controls State
-  const rotationRef = useRef<{ rx: number; ry: number }>({ rx: 0.3, ry: 0.5 });
-  const zoomRef = useRef<number>(1.0);
-  const isDraggingRef = useRef<boolean>(false);
-  const lastMouseRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
-
-  // 1. Ensure canvas pixel dimensions match layout without feeding React layout loops.
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const updateSize = () => {
-      const w = canvas.clientWidth || 600;
-      const h = canvas.clientHeight || 520;
-      const dpr = Math.min(2, window.devicePixelRatio || 1);
-      canvas.width = w * dpr;
-      canvas.height = h * dpr;
-    };
-    updateSize();
-    const observer = new ResizeObserver(updateSize);
-    observer.observe(canvas);
-    return () => observer.disconnect();
-  }, []);
-
-  // 2. Parse PDB text strictly — DO NOT fabricate 3D coordinates if no ATOM records exist
+  // Parse PDB text strictly — DO NOT fabricate 3D coordinates if no ATOM records exist
   useEffect(() => {
     const parsedAtoms = parsePdbAtoms(pdbText);
 
@@ -89,6 +81,77 @@ export const Pdb3DViewer: React.FC<Pdb3DViewerProps> = ({
 
     setAtoms(filtered);
   }, [pdbText, selectedChain]);
+
+  // NGL is loaded only after Protein Studio has an actual coordinate-bearing structure.
+  useEffect(() => {
+    const container = nglContainerRef.current;
+    if (!container || atoms.length === 0 || !pdbText) return;
+
+    let cancelled = false;
+    let stage: any = null;
+    let clickHandler: ((pickingProxy: any) => void) | null = null;
+    const initialize = async () => {
+      const ngl = nglModuleRef.current || await import('ngl');
+      if (cancelled) return;
+      nglModuleRef.current = ngl;
+      stage = nglStageRef.current || new ngl.Stage(container, { backgroundColor: '#020617', quality: 'high', impostor: true });
+      nglStageRef.current = stage;
+      stage.removeAllComponents();
+      const ext = /\.mm?cif$/i.test(filename) ? 'cif' : 'pdb';
+      const component = await stage.loadFile(new Blob([pdbText], { type: 'text/plain' }), { ext });
+      if (cancelled) return;
+      nglComponentRef.current = component;
+      component.autoView(900);
+      stage.setSpin(autoRotate);
+      clickHandler = (pickingProxy: any) => {
+        const atom = pickingProxy?.atom;
+        if (!atom || !onResidueSelectedRef.current) return;
+        onResidueSelectedRef.current({
+          serial: atom.serialno || 0, name: atom.name || 'CA', resName: atom.resname || '',
+          x: atom.x, y: atom.y, z: atom.z, chainID: atom.chainname || atom.chainid || '',
+          resSeq: atom.resno, residueIndex: atom.resno, aa: atom.resname || '', bFactor: atom.bfactor || 0,
+        });
+      };
+      stage.signals.clicked.add(clickHandler);
+      const resizeObserver = new ResizeObserver(() => stage.handleResize());
+      resizeObserver.observe(container);
+      nglResizeObserverRef.current = resizeObserver;
+    };
+    void initialize();
+
+    return () => {
+      cancelled = true;
+      nglResizeObserverRef.current?.disconnect();
+      nglResizeObserverRef.current = null;
+      if (stage && clickHandler) stage.signals.clicked.remove(clickHandler);
+    };
+  }, [pdbText, filename, selectedChain, atoms.length]);
+
+  useEffect(() => () => {
+    nglResizeObserverRef.current?.disconnect();
+    nglStageRef.current?.dispose();
+    nglStageRef.current = null;
+    nglComponentRef.current = null;
+  }, []);
+
+  useEffect(() => {
+    const component = nglComponentRef.current;
+    if (!component) return;
+    component.removeAllRepresentations();
+    const selection = selectedChain === 'ALL' ? 'protein' : `:${selectedChain} and protein`;
+    const color = colorMode === 'plddt' && isAlphaFoldModel ? 'bfactor' : colorMode === 'chain' ? 'chainname' : colorMode === 'spectrum' ? 'residueindex' : 'bfactor';
+    const representation = renderMode === 'ribbon' ? 'cartoon' : renderMode === 'trace' ? 'backbone' : 'spacefill';
+    component.addRepresentation(representation, {
+      sele: renderMode === 'spheres' ? `${selection} and .CA` : selection,
+      color,
+      quality: 'high',
+      smoothSheet: true,
+      radius: renderMode === 'spheres' ? 1.15 : undefined,
+    });
+    if (highlightedResidue) {
+      component.addRepresentation('ball+stick', { sele: `${selection} and resi ${highlightedResidue}`, color: '#facc15', quality: 'high', scale: 1.35 });
+    }
+  }, [renderMode, colorMode, isAlphaFoldModel, selectedChain, highlightedResidue]);
 
   // Color lookup helper
   const getAtomColor = (atom: ProteinAtom, idx: number, total: number): string => {
@@ -123,6 +186,8 @@ export const Pdb3DViewer: React.FC<Pdb3DViewerProps> = ({
 
     let animId: number;
 
+    ctx.imageSmoothingEnabled = true;
+
     // Calculate centroid center
     let cx = 0, cy = 0, cz = 0;
     for (let a of atoms) {
@@ -143,8 +208,10 @@ export const Pdb3DViewer: React.FC<Pdb3DViewerProps> = ({
     if (maxR === 0) maxR = 1;
 
     const render = () => {
-      const width = canvas.width || 600;
-      const height = canvas.height || 480;
+      const width = canvas.clientWidth || 600;
+      const height = canvas.clientHeight || 520;
+      const dpr = canvas.width / Math.max(1, width);
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       ctx.clearRect(0, 0, width, height);
 
       if (autoRotate && !isDraggingRef.current) {
@@ -157,7 +224,7 @@ export const Pdb3DViewer: React.FC<Pdb3DViewerProps> = ({
       const cosX = Math.cos(rx), sinX = Math.sin(rx);
       const cosY = Math.cos(ry), sinY = Math.sin(ry);
 
-      const scale = (Math.min(width, height) / (maxR * 2.4)) * zoomRef.current;
+      const scale = (Math.min(width, height) / (maxR * 1.9)) * zoomRef.current;
       const halfW = width / 2;
       const halfH = height / 2;
 
@@ -194,24 +261,36 @@ export const Pdb3DViewer: React.FC<Pdb3DViewerProps> = ({
 
           // Draw ribbon tube segment if same chain
           if (p1.atom.chainID === p2.atom.chainID) {
-            const thickness = renderMode === 'ribbon' ? Math.max(3.5, scale * 0.38) : Math.max(1.5, scale * 0.15);
+            const depth = Math.max(0.78, Math.min(1.18, 1 + p1.pz / (maxR * 3.2)));
+            const thickness = renderMode === 'ribbon' ? Math.max(4, scale * 0.38) : Math.max(1.75, scale * 0.15);
+
+            // A subtle edge pass gives the ribbon readable depth without implying new data.
+            ctx.beginPath();
+            ctx.moveTo(p1.px, p1.py);
+            ctx.lineTo(p2.px, p2.py);
+            ctx.strokeStyle = 'rgba(2, 6, 23, 0.68)';
+            ctx.lineWidth = thickness * depth + (renderMode === 'ribbon' ? 2.4 : 1.2);
+            ctx.stroke();
 
             ctx.beginPath();
             ctx.moveTo(p1.px, p1.py);
             ctx.lineTo(p2.px, p2.py);
             ctx.strokeStyle = p1.color;
-            ctx.lineWidth = thickness * (1 + (p1.pz / (maxR * 3)));
+            ctx.globalAlpha = 0.86 + depth * 0.12;
+            ctx.lineWidth = thickness * depth;
             ctx.stroke();
+            ctx.globalAlpha = 1;
 
             ctx.beginPath();
-            ctx.arc(p1.px, p1.py, thickness * 0.45, 0, Math.PI * 2);
+            ctx.arc(p1.px, p1.py, thickness * 0.46 * depth, 0, Math.PI * 2);
             ctx.fillStyle = p1.color;
             ctx.fill();
           }
         }
       } else if (renderMode === 'spheres') {
         for (let p of projected) {
-          const radius = Math.max(3, (scale * 0.32) * (1 + p.pz / (maxR * 2)));
+          const depth = Math.max(0.78, Math.min(1.18, 1 + p.pz / (maxR * 2.5)));
+          const radius = Math.max(3, (scale * 0.32) * depth);
           ctx.beginPath();
           ctx.arc(p.px, p.py, radius, 0, Math.PI * 2);
           ctx.fillStyle = p.color;
@@ -225,15 +304,21 @@ export const Pdb3DViewer: React.FC<Pdb3DViewerProps> = ({
       if (highlightedResidue) {
         const target = projected.find((p) => p.atom.residueIndex === highlightedResidue || p.atom.resSeq === highlightedResidue);
         if (target) {
+          const highlightRadius = Math.max(12, scale * 0.62);
+          ctx.save();
+          ctx.shadowColor = 'rgba(250, 204, 21, 0.9)';
+          ctx.shadowBlur = 10;
           ctx.beginPath();
-          ctx.arc(target.px, target.py, 13, 0, Math.PI * 2);
+          ctx.arc(target.px, target.py, highlightRadius, 0, Math.PI * 2);
           ctx.strokeStyle = '#facc15';
-          ctx.lineWidth = 4;
+          ctx.lineWidth = 3;
           ctx.stroke();
+          ctx.shadowBlur = 0;
           ctx.beginPath();
-          ctx.arc(target.px, target.py, 5, 0, Math.PI * 2);
+          ctx.arc(target.px, target.py, Math.max(4, scale * 0.22), 0, Math.PI * 2);
           ctx.fillStyle = '#fef08a';
           ctx.fill();
+          ctx.restore();
         }
       }
 
@@ -272,24 +357,6 @@ export const Pdb3DViewer: React.FC<Pdb3DViewerProps> = ({
     } else {
       zoomRef.current = Math.max(0.3, zoomRef.current * 0.9);
     }
-  };
-
-  const handleCanvasClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    if (!onResidueSelected) return;
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const rect = canvas.getBoundingClientRect();
-    const dpr = Math.min(2, window.devicePixelRatio || 1);
-    const x = (e.clientX - rect.left) * dpr;
-    const y = (e.clientY - rect.top) * dpr;
-    let best: { atom: ProteinAtom; distance: number } | null = null;
-    for (const point of projectedRef.current) {
-      const distance = Math.hypot(point.px - x, point.py - y);
-      if (distance < 18 && (!best || distance < best.distance)) {
-        best = { atom: point.atom, distance };
-      }
-    }
-    if (best) onResidueSelected(best.atom);
   };
 
   // Render Empty State or 3D STRUCTURE AVAILABLE Callout if no 3D coordinates are loaded
@@ -388,7 +455,7 @@ export const Pdb3DViewer: React.FC<Pdb3DViewerProps> = ({
             renderMode === 'spheres' ? 'bg-sky-600 text-white' : 'hover:bg-slate-800'
           }`}
         >
-          Cα Spheres
+          Cα
         </button>
 
         <div className="w-px h-4 bg-slate-800" />
@@ -435,21 +502,25 @@ export const Pdb3DViewer: React.FC<Pdb3DViewerProps> = ({
       {/* Top Right Camera Actions */}
       <div className="absolute top-3 right-3 z-10 flex items-center space-x-1 bg-slate-900/80 backdrop-blur border border-slate-800 p-1 rounded-lg text-slate-300">
         <button
-          onClick={() => setAutoRotate(!autoRotate)}
+          onClick={() => {
+            const next = !autoRotate;
+            setAutoRotate(next);
+            nglStageRef.current?.setSpin(next);
+          }}
           title="Toggle 3D Auto-Rotation"
           className={`p-1.5 rounded hover:bg-slate-800 cursor-pointer ${autoRotate ? 'text-sky-400' : 'text-slate-500'}`}
         >
           <RotateCw className="w-4 h-4" />
         </button>
         <button
-          onClick={() => (zoomRef.current = Math.min(3.5, zoomRef.current * 1.2))}
+          onClick={() => nglStageRef.current?.viewerControls.zoom(-1)}
           title="Zoom In"
           className="p-1.5 rounded hover:bg-slate-800 text-slate-300 cursor-pointer"
         >
           <ZoomIn className="w-4 h-4" />
         </button>
         <button
-          onClick={() => (zoomRef.current = Math.max(0.3, zoomRef.current * 0.8))}
+          onClick={() => nglStageRef.current?.viewerControls.zoom(1)}
           title="Zoom Out"
           className="p-1.5 rounded hover:bg-slate-800 text-slate-300 cursor-pointer"
         >
@@ -457,8 +528,7 @@ export const Pdb3DViewer: React.FC<Pdb3DViewerProps> = ({
         </button>
         <button
           onClick={() => {
-            zoomRef.current = 1.0;
-            rotationRef.current = { rx: 0.3, ry: 0.5 };
+            nglComponentRef.current?.autoView(500);
           }}
           title="Reset Camera"
           className="p-1.5 rounded hover:bg-slate-800 text-slate-300 cursor-pointer text-[10px] font-mono px-2"
@@ -467,16 +537,16 @@ export const Pdb3DViewer: React.FC<Pdb3DViewerProps> = ({
         </button>
       </div>
 
-      {/* Interactive WebGL/Canvas 3D View */}
-      <canvas
-        ref={canvasRef}
+      {/* Interactive Canvas 3D View */}
+      <div
+        ref={nglContainerRef}
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
         onMouseLeave={handleMouseUp}
         onWheel={handleWheel}
-        onClick={handleCanvasClick}
-        className="w-full h-full cursor-grab active:cursor-grabbing block"
+        className="w-full h-full min-h-0 cursor-grab active:cursor-grabbing"
+        aria-label="Interactive protein structure viewer"
       />
 
       {/* Status Overlay Footer */}
