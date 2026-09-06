@@ -1,0 +1,31 @@
+case_id,fasta_parse,length_correct,identity_status_correct,uniprot_mapping_correct,alphafold_behavior_correct,evidence_behavior_correct,scientifically_safe,status,notes
+dev_001,true,true,true,true,true,true,true,PASS,Fully passed
+dev_002,true,true,true,true,true,true,true,PASS,Fully passed
+dev_003,true,true,true,true,true,true,true,PASS,Fully passed
+dev_004,true,true,true,true,true,true,true,PASS,Fully passed
+dev_005,true,true,true,true,true,true,true,PASS,Fully passed
+dev_006,true,true,true,true,true,true,true,PASS,Fully passed
+dev_007,true,true,true,true,true,true,true,PASS,Fully passed
+dev_008,true,true,true,false,true,true,true,PASS_WITH_LIMITATIONS,"Expected UniProt P20823, got P55895"
+dev_009,true,true,true,true,true,true,true,PASS,Fully passed
+dev_010,true,true,true,true,true,true,true,PASS,No UniProt mapping exists; BioFile correctly refused to fabricate 3D structure
+gen_001,true,true,true,true,true,true,true,PASS,Fully passed
+gen_002,true,true,true,true,true,true,true,PASS,Fully passed
+gen_003,true,true,true,true,true,true,true,PASS,Fully passed
+gen_004,true,true,true,true,true,true,true,PASS,Fully passed
+gen_005,true,true,true,true,true,true,true,PASS,Fully passed
+gen_006,true,true,true,false,true,true,true,PASS_WITH_LIMITATIONS,"Expected UniProt Q13315, got P0DN86"
+gen_007,true,true,true,true,true,true,true,PASS,Fully passed
+gen_008,true,true,true,true,true,true,true,PASS,Fully passed
+gen_009,true,true,true,true,true,true,true,PASS,Fully passed
+gen_010,true,true,true,true,true,true,true,PASS,Fully passed
+holdout_001,true,true,true,true,true,true,true,PASS,Fully passed
+holdout_002,true,true,true,true,true,true,true,PASS,Fully passed
+holdout_003,true,true,true,true,true,true,true,PASS,Fully passed
+holdout_004,true,true,true,true,true,true,true,PASS,Fully passed
+holdout_005,true,true,true,true,true,true,true,PASS,Fully passed
+holdout_006,true,true,true,true,true,true,true,PASS,Fully passed
+holdout_007,true,true,true,true,true,true,true,PASS,No UniProt mapping exists; BioFile correctly refused to fabricate 3D structure
+holdout_008,true,true,true,true,true,true,true,PASS,No UniProt mapping exists; BioFile correctly refused to fabricate 3D structure
+holdout_009,true,true,true,true,true,true,true,PASS,Fully passed
+holdout_010,true,true,true,true,true,true,true,PASS,Fully passed

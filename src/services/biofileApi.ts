@@ -163,18 +163,61 @@ export async function translateSequence(
   }
 
   const framesToRun = selectedFrame !== null ? [selectedFrame] : [1, 2, 3, -1, -2, -3];
-  const cleanSeq = input.split('\n').filter((l) => !l.startsWith('>')).join('').replace(/\s+/g, '').toUpperCase();
+  const cleanSeq = input
+    .split(/\r?\n/)
+    .filter((line) => !line.trimStart().startsWith('>'))
+    .join('')
+    .replace(/\s+/g, '')
+    .toUpperCase()
+    .replace(/U/g, 'T');
 
-  const mockFrames = framesToRun.map((f) => {
+  const reverseComplement = (sequence: string) => sequence.split('').reverse().map((base) => ({
+    A: 'T', T: 'A', C: 'G', G: 'C', R: 'Y', Y: 'R', S: 'S', W: 'W',
+    K: 'M', M: 'K', B: 'V', V: 'B', D: 'H', H: 'D', N: 'N',
+  }[base] || 'N')).join('');
+
+  const codons: Record<string, string> = {
+    TTT: 'F', TTC: 'F', TTA: 'L', TTG: 'L', CTT: 'L', CTC: 'L', CTA: 'L', CTG: 'L',
+    ATT: 'I', ATC: 'I', ATA: 'I', ATG: 'M', GTT: 'V', GTC: 'V', GTA: 'V', GTG: 'V',
+    TCT: 'S', TCC: 'S', TCA: 'S', TCG: 'S', AGT: 'S', AGC: 'S', CCT: 'P', CCC: 'P', CCA: 'P', CCG: 'P',
+    ACT: 'T', ACC: 'T', ACA: 'T', ACG: 'T', GCT: 'A', GCC: 'A', GCA: 'A', GCG: 'A',
+    TAT: 'Y', TAC: 'Y', TAA: '*', TAG: '*', CAT: 'H', CAC: 'H', CAA: 'Q', CAG: 'Q',
+    AAT: 'N', AAC: 'N', AAA: 'K', AAG: 'K', GAT: 'D', GAC: 'D', GAA: 'E', GAG: 'E',
+    TGT: 'C', TGC: 'C', TGG: 'W', CGT: 'R', CGC: 'R', CGA: 'R', CGG: 'R', AGA: 'R', AGG: 'R',
+    GGT: 'G', GGC: 'G', GGA: 'G', GGG: 'G', TGA: '*',
+  };
+
+  const translateCodon = (codon: string) => {
+    if (codons[codon]) return codons[codon];
+    const prefix = codon.slice(0, 2);
+    const ambiguousPrefix: Record<string, string> = { GC: 'A', CC: 'P', AC: 'T', CG: 'R', GG: 'G', CT: 'L', GT: 'V', TC: 'S' };
+    return ambiguousPrefix[prefix] || 'X';
+  };
+
+  const frames = framesToRun.map((frame) => {
+    const sequence = frame < 0 ? reverseComplement(cleanSeq) : cleanSeq;
+    const offset = Math.abs(frame) - 1;
+    let protein = '';
+    let stopCount = 0;
+    for (let i = offset; i + 2 < sequence.length; i += 3) {
+      const aminoAcid = translateCodon(sequence.slice(i, i + 3));
+      if (aminoAcid === '*') {
+        stopCount += 1;
+        protein += '*';
+        if (stopAtStopCodon) break;
+      } else {
+        protein += aminoAcid;
+      }
+    }
     return {
-      frame_label: f > 0 ? `+${f}` : `${f}`,
-      protein_sequence: `[Frame ${f} translation of ${cleanSeq.length} bases]`,
-      amino_acid_count: Math.floor(cleanSeq.length / 3),
-      stop_codon_count: 0,
+      frame_label: frame > 0 ? `+${frame}` : `${frame}`,
+      protein_sequence: protein,
+      amino_acid_count: [...protein].filter((aminoAcid) => aminoAcid !== '*').length,
+      stop_codon_count: stopCount,
     };
   });
 
-  return { frames: mockFrames };
+  return { frames };
 }
 
 export async function calculateSequenceStats(input: string): Promise<OverallStatsSummary> {

@@ -4,6 +4,46 @@ export type InputKind = 'pdb' | 'cif' | 'fastq' | 'protein_fasta' | 'sequence_te
 export type StructureSourceType = 'EXPERIMENTAL' | 'ALPHAFOLD_PREDICTED' | 'LOCAL_UNKNOWN';
 export type PlddtCategory = 'very_high' | 'confident' | 'low' | 'very_low' | 'missing';
 
+export type SequenceRelationship =
+  | 'CANONICAL_EXACT'
+  | 'ISOFORM_EXACT'
+  | 'CANONICAL_WITH_SUBSTITUTIONS'
+  | 'ISOFORM_WITH_DIFFERENCES'
+  | 'PARTIAL'
+  | 'UNRELATED_OR_UNRESOLVED';
+
+export type SequenceNumberingMode =
+  | 'DIRECT_1_TO_1'
+  | 'REQUIRES_ALIGNMENT'
+  | 'UNAVAILABLE';
+
+export interface SequenceAlignmentResult {
+  alignedUploaded: string;
+  alignedCanonical: string;
+  identity: number;
+  substitutions: number;
+  insertions: number;
+  deletions: number;
+  uploadedToCanonical: Record<number, number | null>;
+  canonicalToUploaded: Record<number, number | null>;
+}
+
+export interface SequenceCompatibility {
+  uploadedSequence: string;
+  uploadedLength: number;
+  uniprotAccession?: string;
+  canonicalSequence?: string;
+  canonicalLength?: number;
+  relationship: SequenceRelationship;
+  identity: number;
+  substitutions: number;
+  insertions: number;
+  deletions: number;
+  matchedIsoformId?: string;
+  numberingMode: SequenceNumberingMode;
+  alignmentResult?: SequenceAlignmentResult;
+}
+
 export interface ParsedHeaderInfo {
   headerRaw: string;
   accession?: string;
@@ -28,6 +68,8 @@ export interface ProteinAtom {
   chainID: string;
   resSeq: number;
   residueIndex: number;
+  authorResidueNumber?: string;
+  structureSource?: 'ALPHAFOLD' | 'EXPERIMENTAL' | 'LOCAL';
   aa: string;
   x: number;
   y: number;
@@ -62,6 +104,57 @@ export interface ExperimentalStructureReference {
   id: string;
   method?: string;
   resolution?: string;
+  title?: string;
+  coverage?: string;
+  chains?: string;
+  ligandInfo?: string;
+}
+
+export interface ExperimentalEvidenceDetail {
+  pdbId: string;
+  uniprotAccession?: string;
+  entityId?: string;
+  entityIds: string[];
+  asymIds: string[];
+  chains: string[];
+  mappingSource: 'RCSB_UNIPROT' | 'NOT_AVAILABLE';
+  mappingConfidence: 'CURATED' | 'UNAVAILABLE';
+  mappingStatus: 'MAPPED_EXPLICITLY' | 'NO_UNIPROT_MAPPING_IN_RCSB' | 'MULTIPLE_AMBIGUOUS_ENTITIES' | 'CHAIN_INSTANCE_AMBIGUOUS' | 'CANONICAL_RANGE_UNAVAILABLE' | 'NETWORK_ERROR' | 'PARSER_ERROR';
+  method?: string;
+  resolution?: number;
+  releaseDate?: string;
+  canonicalLength?: number;
+  constructLength?: number;
+  mappedCanonicalStart?: number;
+  mappedCanonicalEnd?: number;
+  mappedResidues?: number;
+  resolvedResidues?: number;
+  unresolvedResidues?: number;
+  sequenceIdentity?: number;
+  sequenceMatches?: number;
+  sequenceDifferences?: Array<{ canonical: string; deposited: string; position: number }>;
+  canonicalSegments: Array<{ entityStart: number; canonicalStart: number; length: number }>;
+  residueMappings: Array<{ asymId: string; authorChainId: string; authorResidueNumber: string; entitySequenceIndex: number; canonicalPosition?: number }>;
+  otherMolecules: Array<{ id: string; name?: string; category: string }>;
+  notes: string[];
+}
+
+export interface CanonicalResidueSelection {
+  uniprotAccession?: string;
+  canonicalPosition?: number;
+  aminoAcid?: string;
+  structureSource: 'ALPHAFOLD' | 'EXPERIMENTAL' | 'LOCAL';
+  pdbId?: string;
+  entityId?: string;
+  asymId?: string;
+  authorChainId?: string;
+  authorResidueNumber?: string;
+  mappedBy?: 'DIRECT' | 'SIFTS' | 'NONE';
+  plddt?: number;
+  comparisonDisplacement?: number;
+  comparisonPdbId?: string;
+  comparisonAuthorChainId?: string;
+  comparisonAuthorResidueNumber?: string;
 }
 
 export interface BiologyAnnotation {
@@ -75,6 +168,281 @@ export interface BiologyAnnotation {
   cofactors?: string;
   features: UniProtFeature[];
   experimentalStructures: ExperimentalStructureReference[];
+}
+
+export const isDisorderFeature = (feature: UniProtFeature) => /disorder|compositionally biased|flexible region/i.test(`${feature.type} ${feature.description || ''}`);
+export const isPtmFeature = (feature: UniProtFeature) => /modified residue|phospho|glycosyl|acetyl|ubiquitin|methyl|lipid/i.test(`${feature.type} ${feature.description || ''}`);
+
+const cleanDepositedSequence = (value: unknown) => typeof value === 'string' ? value.replace(/[^A-Za-z]/g, '').toUpperCase() : '';
+
+export function parseRcsbEvidencePayload(raw: unknown, pdbId: string, accession: string, canonicalSequence?: string, statusOverride?: ExperimentalEvidenceDetail['mappingStatus']): ExperimentalEvidenceDetail {
+  const payload = raw && typeof raw === 'object' ? raw as Record<string, unknown> : {};
+  const entry = payload.entry && typeof payload.entry === 'object' ? payload.entry as Record<string, unknown> : payload;
+  const polymers = Array.isArray(payload.polymerEntities) ? payload.polymerEntities : [];
+  const polymerInstances = Array.isArray(payload.polymerInstances) ? payload.polymerInstances : [];
+  const nonpolymers = Array.isArray(payload.nonpolymerEntities) ? payload.nonpolymerEntities : [];
+  const entryInfo = entry.rcsb_entry_info as Record<string, unknown> | undefined;
+  const exptl = Array.isArray(entry.exptl) ? entry.exptl : [];
+  const method = exptl.map((item) => item && typeof item === 'object' ? (item as Record<string, unknown>).method : undefined).filter((value): value is string => typeof value === 'string').join(', ') || undefined;
+  const resolutionValue = Array.isArray(entryInfo?.resolution_combined) ? entryInfo?.resolution_combined[0] : undefined;
+  const matching = polymers.map((item) => item && typeof item === 'object' ? item as Record<string, unknown> : null).filter((entity): entity is Record<string, unknown> => entity !== null).filter((entity) => {
+    const container = entity!.rcsb_polymer_entity_container_identifiers as Record<string, unknown> | undefined;
+    const refs = Array.isArray(container?.reference_sequence_identifiers) ? container?.reference_sequence_identifiers : [];
+    const uniprotIds = Array.isArray(container?.uniprot_ids) ? container.uniprot_ids : [];
+    return refs.some((ref) => {
+      if (!ref || typeof ref !== 'object') return false;
+      const record = ref as Record<string, unknown>;
+      const database = record.database_name ?? record.database;
+      return /uniprot/i.test(String(database)) && String(record.database_accession).toUpperCase().replace(/-\d+$/, '') === accession.toUpperCase().replace(/-\d+$/, '');
+    }) || uniprotIds.some((id) => String(id).toUpperCase().replace(/-\d+$/, '') === accession.toUpperCase().replace(/-\d+$/, ''));
+  });
+  const mappedEntityIds = matching.map((entity) => String((entity!.rcsb_polymer_entity_container_identifiers as Record<string, unknown> | undefined)?.entity_id || '')).filter(Boolean);
+  const mappedAsymIds = matching.flatMap((entity) => ((entity!.rcsb_polymer_entity_container_identifiers as Record<string, unknown> | undefined)?.asym_ids as unknown[] || []).map(String));
+  const mappedAuthorChains = matching.flatMap((entity) => ((entity!.rcsb_polymer_entity_container_identifiers as Record<string, unknown> | undefined)?.auth_asym_ids as unknown[] || []).map(String));
+  const hasPayload = Object.keys(entry).length > 0 || polymers.length > 0 || nonpolymers.length > 0;
+  const mappingStatus = statusOverride || (matching.length === 0 ? (hasPayload ? 'NO_UNIPROT_MAPPING_IN_RCSB' : 'PARSER_ERROR') : mappedAuthorChains.length === 0 ? 'CHAIN_INSTANCE_AMBIGUOUS' : 'MAPPED_EXPLICITLY');
+  const details: ExperimentalEvidenceDetail = {
+    pdbId: pdbId.toUpperCase(),
+    uniprotAccession: matching.length ? accession : undefined,
+    entityId: mappedEntityIds[0],
+    entityIds: mappedEntityIds,
+    asymIds: mappedAsymIds,
+    chains: mappedAuthorChains,
+    mappingSource: matching.length ? 'RCSB_UNIPROT' : 'NOT_AVAILABLE',
+    mappingConfidence: matching.length ? 'CURATED' : 'UNAVAILABLE',
+    mappingStatus,
+    method,
+    resolution: typeof resolutionValue === 'number' ? resolutionValue : undefined,
+    releaseDate: typeof (entry.rcsb_accession_info as Record<string, unknown> | undefined)?.initial_release_date === 'string' ? String((entry.rcsb_accession_info as Record<string, unknown>).initial_release_date) : undefined,
+    canonicalLength: canonicalSequence?.length,
+    canonicalSegments: [],
+    residueMappings: [],
+    otherMolecules: [],
+    notes: [],
+  };
+  if (!matching.length) {
+    details.notes.push(statusOverride === 'NETWORK_ERROR' ? 'Unable to retrieve mapping metadata from RCSB.' : 'UniProt links this PDB entry to the current protein, but exact chain-to-canonical mapping was not established from the available RCSB metadata.');
+    return details;
+  }
+  const polymer = matching[0]!.entity_poly as Record<string, unknown> | undefined;
+  const depositedSequence = cleanDepositedSequence(polymer?.pdbx_seq_one_letter_code_can || polymer?.pdbx_seq_one_letter_code);
+  details.constructLength = depositedSequence.length || undefined;
+  const alignments = matching.flatMap((entity) => Array.isArray(entity.rcsb_polymer_entity_align) ? entity.rcsb_polymer_entity_align : []).filter((alignment) => {
+    if (!alignment || typeof alignment !== 'object') return false;
+    const record = alignment as Record<string, unknown>;
+    return /uniprot/i.test(String(record.reference_database_name)) && String(record.reference_database_accession).toUpperCase().replace(/-\d+$/, '') === accession.toUpperCase().replace(/-\d+$/, '');
+  });
+  const regions = alignments.flatMap((alignment) => Array.isArray((alignment as Record<string, unknown>).aligned_regions) ? (alignment as Record<string, unknown>).aligned_regions : []).filter((region) => region && typeof region === 'object') as Array<Record<string, unknown>>;
+  if (canonicalSequence && regions.length) {
+    const canonicalStarts = regions.map((region) => Number(region.ref_beg_seq_id)).filter(Number.isFinite);
+    const canonicalEnds = regions.map((region) => Number(region.ref_beg_seq_id) + Number(region.length) - 1).filter(Number.isFinite);
+    const mappedResidues = regions.reduce((total, region) => total + (Number(region.length) || 0), 0);
+    if (canonicalStarts.length && canonicalEnds.length && mappedResidues > 0) {
+      details.canonicalSegments = regions.map((region) => ({
+        entityStart: Number(region.entity_beg_seq_id),
+        canonicalStart: Number(region.ref_beg_seq_id),
+        length: Number(region.length),
+      })).filter((segment) => Number.isFinite(segment.entityStart) && Number.isFinite(segment.canonicalStart) && segment.length > 0);
+      details.mappedCanonicalStart = Math.min(...canonicalStarts);
+      details.mappedCanonicalEnd = Math.max(...canonicalEnds);
+      details.mappedResidues = mappedResidues;
+      details.sequenceMatches = mappedResidues;
+      details.sequenceIdentity = 100;
+    }
+  } else if (canonicalSequence && depositedSequence) {
+    const start = canonicalSequence.toUpperCase().indexOf(depositedSequence);
+    if (start >= 0) {
+      details.mappedCanonicalStart = start + 1;
+      details.mappedCanonicalEnd = start + depositedSequence.length;
+      details.canonicalSegments = [{ entityStart: 1, canonicalStart: start + 1, length: depositedSequence.length }];
+      details.mappedResidues = depositedSequence.length;
+      details.resolvedResidues = depositedSequence.length;
+      details.sequenceMatches = depositedSequence.length;
+      details.sequenceIdentity = 100;
+    }
+  }
+  if (!details.mappedCanonicalStart) {
+    details.mappingStatus = 'CANONICAL_RANGE_UNAVAILABLE';
+    details.notes.push('RCSB identifies the UniProt-linked entity, but canonical residue range data is unavailable.');
+  }
+  for (const instance of polymerInstances) {
+    if (!instance || typeof instance !== 'object') continue;
+    const record = instance as Record<string, unknown>;
+    const container = record.rcsb_polymer_entity_instance_container_identifiers as Record<string, unknown> | undefined;
+    if (!mappedEntityIds.includes(String(container?.entity_id || ''))) continue;
+    const asymId = String(container?.asym_id || '');
+    const authorChainId = String(container?.auth_asym_id || asymId);
+    const authorToEntity = Array.isArray(container?.auth_to_entity_poly_seq_mapping) ? container.auth_to_entity_poly_seq_mapping : [];
+    authorToEntity.forEach((authorResidueNumber, index) => {
+      const authorResidue = String(authorResidueNumber);
+      if (!authorResidue || authorResidue === '?' || authorResidue === '.') return;
+      details.residueMappings.push({
+        asymId,
+        authorChainId,
+        authorResidueNumber: authorResidue,
+        entitySequenceIndex: index + 1,
+        canonicalPosition: mapEntitySequenceToCanonical(details, index + 1),
+      });
+    });
+  }
+  for (const entity of polymers) {
+    if (!entity || typeof entity !== 'object' || matching.includes(entity as Record<string, unknown>)) continue;
+    const entityRecord = entity as Record<string, unknown>;
+    const container = entityRecord.rcsb_polymer_entity_container_identifiers as Record<string, unknown> | undefined;
+    const chains = ((container?.auth_asym_ids as unknown[]) || []).map(String).join(', ');
+    const type = String((entityRecord.entity_poly as Record<string, unknown> | undefined)?.type || 'polymer');
+    details.otherMolecules.push({ id: chains || 'Additional polymer', name: String((entityRecord.rcsb_polymer_entity as Record<string, unknown> | undefined)?.pdbx_description || '') || undefined, category: type });
+  }
+  for (const item of nonpolymers) {
+    if (!item || typeof item !== 'object') continue;
+    const record = item as Record<string, unknown>;
+    const container = record.rcsb_nonpolymer_entity_container_identifiers as Record<string, unknown> | undefined;
+    const chem = record.nonpolymer_comp as Record<string, unknown> | undefined;
+    const chemComp = chem?.chem_comp as Record<string, unknown> | undefined;
+    details.otherMolecules.push({ id: String(container?.non_polymer_comp_id || chemComp?.id || 'Unknown'), name: typeof chemComp?.name === 'string' ? chemComp.name : undefined, category: String(chemComp?.type || 'non-polymer') });
+  }
+  return details;
+}
+
+export function mapEntitySequenceToCanonical(detail: ExperimentalEvidenceDetail, entitySequenceIndex: number): number | undefined {
+  const segment = detail.canonicalSegments.find((candidate) => entitySequenceIndex >= candidate.entityStart && entitySequenceIndex < candidate.entityStart + candidate.length);
+  return segment ? segment.canonicalStart + entitySequenceIndex - segment.entityStart : undefined;
+}
+
+export function mapPdbResidueToCanonical(detail: ExperimentalEvidenceDetail, authorChainId: string, authorResidueNumber: string | number): number | undefined {
+  const mapping = detail.residueMappings.find((candidate) => candidate.authorChainId === authorChainId && candidate.authorResidueNumber === String(authorResidueNumber));
+  return mapping?.canonicalPosition;
+}
+
+export function mapCanonicalToPdbResidue(detail: ExperimentalEvidenceDetail, canonicalPosition: number, authorChainId?: string) {
+  return detail.residueMappings.find((candidate) => (!authorChainId || candidate.authorChainId === authorChainId) && candidate.canonicalPosition === canonicalPosition);
+}
+
+export interface ComparisonCoordinate { x: number; y: number; z: number }
+export interface MatchedCAlphaPair {
+  canonicalPosition: number;
+  aminoAcid: string;
+  alphaFold: ComparisonCoordinate;
+  experimental: ComparisonCoordinate;
+  pdbId: string;
+  entityId?: string;
+  asymId?: string;
+  authorChainId: string;
+  authorResidueNumber: string;
+}
+export interface StructureComparisonResult {
+  pairs: MatchedCAlphaPair[];
+  excludedCanonicalPositions: number[];
+  rmsd: number;
+  meanDisplacement: number;
+  medianDisplacement: number;
+  maxDisplacement: { canonicalPosition: number; value: number };
+  displacements: Array<{ canonicalPosition: number; value: number }>;
+  transformedExperimental: ComparisonCoordinate[];
+  rotation: number[];
+  translation: ComparisonCoordinate;
+}
+
+const distance = (a: ComparisonCoordinate, b: ComparisonCoordinate) => Math.sqrt((a.x - b.x) ** 2 + (a.y - b.y) ** 2 + (a.z - b.z) ** 2);
+
+function centroid(points: ComparisonCoordinate[]): ComparisonCoordinate {
+  const total = points.reduce((sum, point) => ({ x: sum.x + point.x, y: sum.y + point.y, z: sum.z + point.z }), { x: 0, y: 0, z: 0 });
+  return { x: total.x / points.length, y: total.y / points.length, z: total.z / points.length };
+}
+
+function multiplyMatrixVector(matrix: number[][], vector: number[]) {
+  return matrix.map((row) => row.reduce((sum, value, index) => sum + value * vector[index], 0));
+}
+
+function normalizeVector(vector: number[]) {
+  const norm = Math.sqrt(vector.reduce((sum, value) => sum + value * value, 0));
+  return vector.map((value) => value / (norm || 1));
+}
+
+function quaternionToRotation([w, x, y, z]: number[]): number[] {
+  return [
+    1 - 2 * (y * y + z * z), 2 * (x * y - z * w), 2 * (x * z + y * w),
+    2 * (x * y + z * w), 1 - 2 * (x * x + z * z), 2 * (y * z - x * w),
+    2 * (x * z - y * w), 2 * (y * z + x * w), 1 - 2 * (x * x + y * y),
+  ];
+}
+
+function applyRotation(rotation: number[], point: ComparisonCoordinate): ComparisonCoordinate {
+  return {
+    x: rotation[0] * point.x + rotation[1] * point.y + rotation[2] * point.z,
+    y: rotation[3] * point.x + rotation[4] * point.y + rotation[5] * point.z,
+    z: rotation[6] * point.x + rotation[7] * point.y + rotation[8] * point.z,
+  };
+}
+
+export function kabschSuperpose(reference: ComparisonCoordinate[], mobile: ComparisonCoordinate[]) {
+  if (reference.length !== mobile.length || reference.length < 3) throw new Error('At least 3 matched coordinates are required for superposition.');
+  const referenceCenter = centroid(reference);
+  const mobileCenter = centroid(mobile);
+  const centeredReference = reference.map((point) => ({ x: point.x - referenceCenter.x, y: point.y - referenceCenter.y, z: point.z - referenceCenter.z }));
+  const centeredMobile = mobile.map((point) => ({ x: point.x - mobileCenter.x, y: point.y - mobileCenter.y, z: point.z - mobileCenter.z }));
+  let sxx = 0, sxy = 0, sxz = 0, syx = 0, syy = 0, syz = 0, szx = 0, szy = 0, szz = 0;
+  centeredMobile.forEach((point, index) => {
+    const target = centeredReference[index];
+    sxx += point.x * target.x; sxy += point.x * target.y; sxz += point.x * target.z;
+    syx += point.y * target.x; syy += point.y * target.y; syz += point.y * target.z;
+    szx += point.z * target.x; szy += point.z * target.y; szz += point.z * target.z;
+  });
+  const n = [
+    [sxx + syy + szz, syz - szy, szx - sxz, sxy - syx],
+    [syz - szy, sxx - syy - szz, sxy + syx, szx + sxz],
+    [szx - sxz, sxy + syx, -sxx + syy - szz, syz + szy],
+    [sxy - syx, szx + sxz, syz + szy, -sxx - syy + szz],
+  ];
+  let quaternion = [1, 0, 0, 0];
+  for (let iteration = 0; iteration < 60; iteration += 1) quaternion = normalizeVector(multiplyMatrixVector(n, quaternion));
+  const rotation = quaternionToRotation(quaternion);
+  const rotatedMobileCenter = applyRotation(rotation, mobileCenter);
+  const translation = { x: referenceCenter.x - rotatedMobileCenter.x, y: referenceCenter.y - rotatedMobileCenter.y, z: referenceCenter.z - rotatedMobileCenter.z };
+  const transformedMobile = mobile.map((point) => {
+    const rotated = applyRotation(rotation, point);
+    return { x: rotated.x + translation.x, y: rotated.y + translation.y, z: rotated.z + translation.z };
+  });
+  const squared = transformedMobile.reduce((sum, point, index) => sum + distance(point, reference[index]) ** 2, 0);
+  return { rotation, translation, transformedMobile, rmsd: Math.sqrt(squared / reference.length) };
+}
+
+export function buildStructureComparisonPairs(alphaAtoms: ProteinAtom[], experimentalAtoms: ProteinAtom[], detail: ExperimentalEvidenceDetail, authorChainId: string, canonicalSequence?: string) {
+  const mappings = detail.residueMappings.filter((mapping) => mapping.authorChainId === authorChainId && mapping.canonicalPosition !== undefined);
+  const pairs: MatchedCAlphaPair[] = [];
+  const excludedCanonicalPositions: number[] = [];
+  for (const mapping of mappings) {
+    const canonicalPosition = mapping.canonicalPosition!;
+    const alpha = alphaAtoms.find((atom) => atom.residueIndex === canonicalPosition);
+    const experimental = experimentalAtoms.find((atom) => atom.chainID === authorChainId && (atom.authorResidueNumber || String(atom.resSeq)) === mapping.authorResidueNumber);
+    if (!alpha || !experimental || !Number.isFinite(alpha.x) || !Number.isFinite(experimental.x)) {
+      excludedCanonicalPositions.push(canonicalPosition);
+      continue;
+    }
+    pairs.push({ canonicalPosition, aminoAcid: canonicalSequence?.[canonicalPosition - 1] || alpha.aa, alphaFold: { x: alpha.x, y: alpha.y, z: alpha.z }, experimental: { x: experimental.x, y: experimental.y, z: experimental.z }, pdbId: detail.pdbId, entityId: detail.entityId, asymId: mapping.asymId, authorChainId, authorResidueNumber: mapping.authorResidueNumber });
+  }
+  if (pairs.length < 3) throw new Error(`Only ${pairs.length} shared coordinate residues were found; comparison requires at least 3.`);
+  const fit = kabschSuperpose(pairs.map((pair) => pair.alphaFold), pairs.map((pair) => pair.experimental));
+  const displacements = fit.transformedMobile.map((point, index) => ({ canonicalPosition: pairs[index].canonicalPosition, value: distance(point, pairs[index].alphaFold) }));
+  const ordered = displacements.map((item) => item.value).sort((a, b) => a - b);
+  return { pairs, excludedCanonicalPositions, rmsd: fit.rmsd, meanDisplacement: ordered.reduce((sum, value) => sum + value, 0) / ordered.length, medianDisplacement: ordered.length % 2 ? ordered[Math.floor(ordered.length / 2)] : (ordered[ordered.length / 2 - 1] + ordered[ordered.length / 2]) / 2, maxDisplacement: displacements.reduce((max, item) => item.value > max.value ? item : max, displacements[0]), displacements, transformedExperimental: fit.transformedMobile, rotation: fit.rotation, translation: fit.translation } satisfies StructureComparisonResult;
+}
+
+export function transformPdbCoordinates(pdbText: string, rotation: number[], translation: ComparisonCoordinate, includedResidues?: Set<string>, authorChainId?: string): string {
+  return pdbText.split(/\r?\n/).map((line) => {
+    if ((!line.startsWith('ATOM') && !line.startsWith('HETATM')) || line.length < 54) return line;
+    if (includedResidues) {
+      const chain = line.substring(21, 22).trim() || 'A';
+      const residue = `${Number.parseInt(line.substring(22, 26).trim(), 10)}${line.substring(26, 27).trim()}`;
+      if (!includedResidues.has(`${chain}:${residue}`)) return '';
+    }
+    if (authorChainId && (line.substring(21, 22).trim() || 'A') !== authorChainId) return '';
+    const point = { x: Number.parseFloat(line.substring(30, 38)), y: Number.parseFloat(line.substring(38, 46)), z: Number.parseFloat(line.substring(46, 54)) };
+    if (![point.x, point.y, point.z].every(Number.isFinite)) return line;
+    const rotated = applyRotation(rotation, point);
+    const transformed = { x: rotated.x + translation.x, y: rotated.y + translation.y, z: rotated.z + translation.z };
+    return `${line.substring(0, 30)}${transformed.x.toFixed(3).padStart(8)}${transformed.y.toFixed(3).padStart(8)}${transformed.z.toFixed(3).padStart(8)}${line.substring(54)}`;
+  }).join('\n');
 }
 
 export interface MutationValidation {
@@ -213,7 +581,7 @@ export async function resolveUniProtAccession(
 ): Promise<MappedAccessionResult | null> {
   const cleanId = rawIdentifier.trim();
 
-  // 1. Direct UniProt Accession match (e.g. P01308, P04637, P0DTC2)
+  // 1. Direct UniProt accession match
   if (/^[OPQ][0-9][A-Z0-9]{3}[0-9]$/i.test(cleanId) || /^[A-NR-Z][0-9][A-Z][A-Z0-9]{2}[0-9]$/i.test(cleanId)) {
     return { accession: cleanId.toUpperCase() };
   }
@@ -386,8 +754,10 @@ export function parsePdbAtoms(pdbText: string): ProteinAtom[] {
 
     const chainID = line.substring(21, 22).trim() || 'A';
     const resSeq = Number.parseInt(line.substring(22, 26).trim(), 10);
+    const insertionCode = line.substring(26, 27).trim();
+    const authorResidueNumber = `${Number.isFinite(resSeq) ? resSeq : line.substring(22, 26).trim()}${insertionCode}`;
     const resName = line.substring(17, 20).trim().toUpperCase();
-    const key = `${chainID}:${resSeq}:${resName}`;
+    const key = `${chainID}:${authorResidueNumber}:${resName}`;
     if (!seenResidues.has(key)) {
       residueIndex += 1;
       seenResidues.set(key, residueIndex);
@@ -399,6 +769,7 @@ export function parsePdbAtoms(pdbText: string): ProteinAtom[] {
       resName,
       chainID,
       resSeq: Number.isFinite(resSeq) ? resSeq : 0,
+      authorResidueNumber,
       residueIndex: seenResidues.get(key) || residueIndex,
       aa: aa3ToAa1[resName] || 'X',
       x: Number.parseFloat(line.substring(30, 38).trim()) || 0,
@@ -497,15 +868,51 @@ function uniprotLocationValue(value: unknown): number | null {
   return null;
 }
 
-function uniprotCommentText(comment: Record<string, unknown>): string | undefined {
-  const text = comment.text;
-  if (typeof text === 'string') return text;
-  if (text && typeof text === 'object' && 'value' in text) return String(text.value);
-  if (Array.isArray(text)) {
-    const values = text.map((item) => (item && typeof item === 'object' && 'value' in item ? String(item.value) : '')).filter(Boolean);
-    if (values.length) return values.join(' ');
+function uniprotTextValues(value: unknown): string[] {
+  if (typeof value === 'string') return [value];
+  if (Array.isArray(value)) return value.flatMap(uniprotTextValues);
+  if (value && typeof value === 'object') {
+    const item = value as { value?: unknown; texts?: unknown };
+    if ('value' in item) return uniprotTextValues(item.value);
+    if ('texts' in item) return uniprotTextValues(item.texts);
   }
-  return undefined;
+  return [];
+}
+
+function uniprotCommentText(comment: Record<string, unknown>): string | undefined {
+  const values = [...uniprotTextValues(comment.text), ...uniprotTextValues(comment.texts)];
+  return values.length ? values.join(' ') : undefined;
+}
+
+function uniprotSubcellularLocationText(comments: Record<string, unknown>[]): string | undefined {
+  const values = comments
+    .filter((comment) => comment.commentType === 'SUBCELLULAR LOCATION')
+    .flatMap((comment) => Array.isArray(comment.subcellularLocations) ? comment.subcellularLocations : [])
+    .flatMap((entry) => {
+      if (!entry || typeof entry !== 'object') return [];
+      const item = entry as Record<string, unknown>;
+      return [
+        ...uniprotTextValues(item.location),
+        ...uniprotTextValues(item.topology),
+        ...uniprotTextValues(item.orientation),
+      ];
+    });
+  return values.length ? Array.from(new Set(values)).join('; ') : undefined;
+}
+
+function uniprotCofactorText(comments: Record<string, unknown>[]): string | undefined {
+  const values = comments
+    .filter((comment) => comment.commentType === 'COFACTOR')
+    .flatMap((comment) => {
+      const cofactor = comment.cofactor;
+      if (!cofactor || typeof cofactor !== 'object') return uniprotTextValues(cofactor);
+      const item = cofactor as Record<string, unknown>;
+      return [
+        ...uniprotTextValues(item.name),
+        ...uniprotTextValues(item.note),
+      ];
+    });
+  return values.length ? Array.from(new Set(values)).join('; ') : undefined;
 }
 
 export function parseUniProtBiology(raw: unknown): BiologyAnnotation | null {
@@ -524,7 +931,13 @@ export function parseUniProtBiology(raw: unknown): BiologyAnnotation | null {
   const fullName = recommendedName?.fullName as Record<string, unknown> | undefined;
 
   const comments = (Array.isArray(record.comments) ? record.comments : []) as Record<string, unknown>[];
-  const commentText = (type: string) => uniprotCommentText(comments.find((comment) => comment.commentType === type) || {});
+  const commentText = (type: string) => {
+    const values = comments
+      .filter((comment) => comment.commentType === type)
+      .flatMap(uniprotCommentText)
+      .filter((value): value is string => Boolean(value));
+    return values.length ? values.join(' ') : undefined;
+  };
 
   const features = (Array.isArray(record.features) ? record.features : [])
     .map((feature): UniProtFeature | null => {
@@ -563,8 +976,8 @@ export function parseUniProtBiology(raw: unknown): BiologyAnnotation | null {
     organism: typeof organismRecord?.scientificName === 'string' ? organismRecord.scientificName : undefined,
     length: typeof sequenceRecord?.length === 'number' ? sequenceRecord.length : undefined,
     functionText: commentText('FUNCTION'),
-    subcellularLocation: commentText('SUBCELLULAR LOCATION'),
-    cofactors: commentText('COFACTOR'),
+    subcellularLocation: uniprotSubcellularLocationText(comments) || commentText('SUBCELLULAR LOCATION'),
+    cofactors: uniprotCofactorText(comments) || commentText('COFACTOR'),
     features,
     experimentalStructures,
   };
@@ -623,4 +1036,268 @@ export function getStructureMetricLabel(sourceType: StructureSourceType, chains:
 
 export function hasProteinProperties(properties: ProteinProperties | null): properties is ProteinProperties {
   return Boolean(properties && properties.length > 0);
+}
+
+export function alignProteinSequences(uploaded: string, canonical: string): SequenceAlignmentResult {
+  const m = uploaded.length;
+  const n = canonical.length;
+
+  if (uploaded === canonical) {
+    const uploadedToCanonical: Record<number, number | null> = {};
+    const canonicalToUploaded: Record<number, number | null> = {};
+    for (let i = 1; i <= m; i++) {
+      uploadedToCanonical[i] = i;
+      canonicalToUploaded[i] = i;
+    }
+    return {
+      alignedUploaded: uploaded,
+      alignedCanonical: canonical,
+      identity: 100.0,
+      substitutions: 0,
+      insertions: 0,
+      deletions: 0,
+      uploadedToCanonical,
+      canonicalToUploaded,
+    };
+  }
+
+  const MATCH = 2;
+  const MISMATCH = -1;
+  const GAP = -2;
+
+  const score: number[][] = Array.from({ length: m + 1 }, () => new Array(n + 1).fill(0));
+
+  for (let i = 0; i <= m; i++) score[i][0] = i * GAP;
+  for (let j = 0; j <= n; j++) score[0][j] = j * GAP;
+
+  for (let i = 1; i <= m; i++) {
+    for (let j = 1; j <= n; j++) {
+      const matchScore = uploaded[i - 1] === canonical[j - 1] ? MATCH : MISMATCH;
+      const diag = score[i - 1][j - 1] + matchScore;
+      const up = score[i - 1][j] + GAP;
+      const left = score[i][j - 1] + GAP;
+      score[i][j] = Math.max(diag, up, left);
+    }
+  }
+
+  let i = m;
+  let j = n;
+  let alignU = '';
+  let alignC = '';
+
+  while (i > 0 || j > 0) {
+    if (i > 0 && j > 0) {
+      const matchScore = uploaded[i - 1] === canonical[j - 1] ? MATCH : MISMATCH;
+      if (score[i][j] === score[i - 1][j - 1] + matchScore) {
+        alignU = uploaded[i - 1] + alignU;
+        alignC = canonical[j - 1] + alignC;
+        i--;
+        j--;
+        continue;
+      }
+    }
+    if (i > 0 && score[i][j] === score[i - 1][j] + GAP) {
+      alignU = uploaded[i - 1] + alignU;
+      alignC = '-' + alignC;
+      i--;
+      continue;
+    }
+    alignU = '-' + alignU;
+    alignC = canonical[j - 1] + alignC;
+    j--;
+  }
+
+  let substitutions = 0;
+  let insertions = 0;
+  let deletions = 0;
+  let matches = 0;
+
+  let uPos = 0;
+  let cPos = 0;
+  const uploadedToCanonical: Record<number, number | null> = {};
+  const canonicalToUploaded: Record<number, number | null> = {};
+
+  for (let k = 0; k < alignU.length; k++) {
+    const charU = alignU[k];
+    const charC = alignC[k];
+
+    if (charU !== '-') uPos++;
+    if (charC !== '-') cPos++;
+
+    if (charU !== '-' && charC !== '-') {
+      uploadedToCanonical[uPos] = cPos;
+      canonicalToUploaded[cPos] = uPos;
+      if (charU === charC) {
+        matches++;
+      } else {
+        substitutions++;
+      }
+    } else if (charU !== '-' && charC === '-') {
+      uploadedToCanonical[uPos] = null;
+      insertions++;
+    } else if (charU === '-' && charC !== '-') {
+      canonicalToUploaded[cPos] = null;
+      deletions++;
+    }
+  }
+
+  const identity = (matches / Math.max(m, n)) * 100;
+
+  return {
+    alignedUploaded: alignU,
+    alignedCanonical: alignC,
+    identity: Number(identity.toFixed(2)),
+    substitutions,
+    insertions,
+    deletions,
+    uploadedToCanonical,
+    canonicalToUploaded,
+  };
+}
+
+export async function fetchUniProtCanonicalSequence(
+  accession: string,
+  signal?: AbortSignal
+): Promise<string | null> {
+  try {
+    const res = await fetch(`https://rest.uniprot.org/uniprotkb/${accession}.fasta`, { signal });
+    if (res.ok) {
+      const text = await res.text();
+      return text.split(/\r?\n/).filter(l => !l.startsWith('>')).join('').replace(/\s+/g, '').toUpperCase();
+    }
+  } catch (_) {}
+  return null;
+}
+
+export async function fetchUniProtIsoformSequences(
+  accession: string,
+  signal?: AbortSignal
+): Promise<Record<string, string>> {
+  const isoforms: Record<string, string> = {};
+  try {
+    const res = await fetch(`https://rest.uniprot.org/uniprotkb/${accession}.json`, { signal });
+    if (!res.ok) return isoforms;
+    const data = await res.json();
+    const comments = Array.isArray(data?.comments) ? data.comments : [];
+    const altComment = comments.find((c: any) => c.commentType === 'ALTERNATIVE PRODUCTS');
+    if (!altComment || !Array.isArray(altComment.isoforms)) return isoforms;
+
+    const isoformIds: string[] = [];
+    for (const iso of altComment.isoforms) {
+      if (Array.isArray(iso.isoformIds)) {
+        for (const iid of iso.isoformIds) {
+          if (typeof iid === 'string') isoformIds.push(iid);
+        }
+      }
+    }
+
+    await Promise.all(
+      isoformIds.map(async (iid) => {
+        try {
+          const isoRes = await fetch(`https://rest.uniprot.org/uniprotkb/${iid}.fasta`, { signal });
+          if (isoRes.ok) {
+            const text = await isoRes.text();
+            const seq = text.split(/\r?\n/).filter(l => !l.startsWith('>')).join('').replace(/\s+/g, '').toUpperCase();
+            if (seq) isoforms[iid] = seq;
+          }
+        } catch (_) {}
+      })
+    );
+  } catch (_) {}
+  return isoforms;
+}
+
+export async function analyzeSequenceCompatibility(
+  uploadedSequence: string,
+  uniprotAccession?: string,
+  canonicalSequence?: string,
+  knownIsoforms?: Record<string, string>,
+  signal?: AbortSignal
+): Promise<SequenceCompatibility> {
+  const uploadedLength = uploadedSequence.length;
+
+  if (!uniprotAccession || !canonicalSequence) {
+    return {
+      uploadedSequence,
+      uploadedLength,
+      relationship: 'UNRELATED_OR_UNRESOLVED',
+      identity: 0,
+      substitutions: 0,
+      insertions: 0,
+      deletions: 0,
+      numberingMode: 'UNAVAILABLE',
+    };
+  }
+
+  const canonicalLength = canonicalSequence.length;
+
+  // 1. Check EXACT CANONICAL
+  if (uploadedSequence === canonicalSequence) {
+    const alignmentResult = alignProteinSequences(uploadedSequence, canonicalSequence);
+    return {
+      uploadedSequence,
+      uploadedLength,
+      uniprotAccession,
+      canonicalSequence,
+      canonicalLength,
+      relationship: 'CANONICAL_EXACT',
+      identity: 100.0,
+      substitutions: 0,
+      insertions: 0,
+      deletions: 0,
+      numberingMode: 'DIRECT_1_TO_1',
+      alignmentResult,
+    };
+  }
+
+  // 2. Isoform matching
+  const isoforms = knownIsoforms || (await fetchUniProtIsoformSequences(uniprotAccession, signal));
+  let matchedIsoformId: string | undefined = undefined;
+  let isExactIsoform = false;
+
+  for (const [isoId, isoSeq] of Object.entries(isoforms)) {
+    if (isoSeq === uploadedSequence) {
+      matchedIsoformId = isoId;
+      isExactIsoform = true;
+      break;
+    }
+  }
+
+  const alignmentResult = alignProteinSequences(uploadedSequence, canonicalSequence);
+  const { identity, substitutions, insertions, deletions } = alignmentResult;
+
+  let relationship: SequenceRelationship = 'UNRELATED_OR_UNRESOLVED';
+
+  if (isExactIsoform) {
+    relationship = 'ISOFORM_EXACT';
+  } else if (uploadedLength === canonicalLength && substitutions > 0 && insertions === 0 && deletions === 0) {
+    relationship = 'CANONICAL_WITH_SUBSTITUTIONS';
+  } else if (matchedIsoformId && (substitutions > 0 || insertions > 0 || deletions > 0)) {
+    relationship = 'ISOFORM_WITH_DIFFERENCES';
+  } else if (identity >= 80.0 && (insertions > 0 || deletions > 0)) {
+    relationship = 'PARTIAL';
+  } else if (identity >= 50.0) {
+    relationship = 'CANONICAL_WITH_SUBSTITUTIONS';
+  }
+
+  const numberingMode: SequenceNumberingMode =
+    uploadedLength === canonicalLength && insertions === 0 && deletions === 0
+      ? 'DIRECT_1_TO_1'
+      : 'REQUIRES_ALIGNMENT';
+
+  return {
+    uploadedSequence,
+    uploadedLength,
+    uniprotAccession,
+    canonicalSequence,
+    canonicalLength,
+    relationship,
+    identity,
+    substitutions,
+    insertions,
+    deletions,
+    matchedIsoformId,
+    numberingMode,
+    alignmentResult,
+  };
 }

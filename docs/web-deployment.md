@@ -19,7 +19,15 @@ No hosting account or platform is configured in the repository. The app is a Vit
 
 ## SPA routing
 
-The current client navigation is internal React state/navigation. A host should serve `dist/index.html` as the fallback for application routes if URL-based routes are added later.
+The frontend uses client-side History API routes:
+
+- `/`
+- `/protein-studio`
+- `/sequence-tools`
+- `/how-pazatlas-works`
+- `/about`
+
+Static hosting must rewrite unknown application paths to `dist/index.html` without redirecting them. Configure the provider's SPA fallback or equivalent rewrite. Direct unknown application paths are handled by PazAtlas's in-app 404 state after the fallback is served.
 
 ## External database requests
 

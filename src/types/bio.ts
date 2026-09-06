@@ -188,4 +188,4 @@ export interface FastQcReport {
   overall_status: 'PASS' | 'WARN' | 'FAIL';
 }
 
-export type PageView = 'home' | 'sequence_tools' | 'file_tools' | 'inspect' | 'protein_studio' | 'history' | 'settings';
+export type PageView = 'home' | 'sequence_tools' | 'protein_studio' | 'how_biofile_works' | 'about';

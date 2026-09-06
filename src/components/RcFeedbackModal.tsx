@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, MessageSquare, Copy, Check, Download, ShieldCheck, AlertCircle } from 'lucide-react';
+import { X, MessageSquare, ShieldCheck, AlertCircle, Mail } from 'lucide-react';
 import { sanitizeFeedbackText } from '../utils/sanitizer';
 
 interface RcFeedbackModalProps {
@@ -13,8 +13,9 @@ export const RcFeedbackModal: React.FC<RcFeedbackModalProps> = ({ isOpen, onClos
   const [difficulty, setDifficulty] = useState('3');
   const [confidence, setConfidence] = useState('Yes');
   const [feedbackText, setFeedbackText] = useState('');
+  const [email, setEmail] = useState('');
   const [sanitizeData, setSanitizeData] = useState(true);
-  const [copied, setCopied] = useState(false);
+  const [emailError, setEmailError] = useState('');
 
   if (!isOpen) return null;
 
@@ -23,11 +24,12 @@ export const RcFeedbackModal: React.FC<RcFeedbackModalProps> = ({ isOpen, onClos
     const finalFeedback = sanitizeData ? sanitizeFeedbackText(rawFeedback) : rawFeedback;
     const finalTask = sanitizeData ? sanitizeFeedbackText(taskTested || 'General Exploration') : (taskTested || 'General Exploration');
 
-    return `# BioFile Toolkit V1 — RC Feedback Submission
+    return `# PazAtlas Research Beta Feedback
 
 ## Tester Background
 - **Role**: ${role}
-- **BioFile Toolkit Version**: 1.0.0-rc.2
+- **PazAtlas Version**: 1.0.0-rc.2
+- **Reply Email**: ${email}
 - **OS**: macOS Darwin (arm64)
 - **Local Privacy Mode**: Active (No automated sequence telemetry)
 
@@ -43,26 +45,19 @@ ${finalFeedback}
 - **Sequence & Path Sanitization**: ${sanitizeData ? 'ENABLED (Biological sequence data excluded)' : 'DISABLED'}
 
 ---
-*Generated via BioFile Toolkit Help & RC Feedback Module*
+*Generated via PazAtlas Help & Research Beta Feedback*
 `;
   };
 
-
-  const handleCopy = () => {
-    navigator.clipboard.writeText(generateFeedbackMarkdown());
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  };
-
-  const handleExport = () => {
-    const text = generateFeedbackMarkdown();
-    const blob = new Blob([text], { type: 'text/markdown' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `rc-feedback-${Date.now()}.md`;
-    a.click();
-    URL.revokeObjectURL(url);
+  const handleEmailPazeraTech = () => {
+    if (!email.trim() || !/^\S+@\S+\.\S+$/.test(email.trim())) {
+      setEmailError('Enter a valid email address so Pazera can reply.');
+      return;
+    }
+    setEmailError('');
+    const subject = 'PazAtlas Research Beta Feedback';
+    const body = generateFeedbackMarkdown();
+    window.location.href = `mailto:pazeratechnology@gmail.com?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
   };
 
   return (
@@ -78,7 +73,7 @@ ${finalFeedback}
                 Help & RC Feedback
               </h2>
               <p className="text-xs text-slate-500 dark:text-slate-400">
-                BioFile Toolkit 1.0.0-rc.2 — Tester Feedback Tool
+                PazAtlas 1.0.0-rc.2 — Research Beta Feedback
               </p>
             </div>
           </div>
@@ -147,6 +142,23 @@ ${finalFeedback}
           </div>
 
           <div>
+            <label htmlFor="feedbackEmail" className="block font-medium text-slate-700 dark:text-slate-300 mb-1">
+              Your email address
+            </label>
+            <input
+              id="feedbackEmail"
+              type="email"
+              required
+              placeholder="you@example.org"
+              value={email}
+              onChange={(e) => { setEmail(e.target.value); setEmailError(''); }}
+              className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg p-2 text-xs"
+              aria-describedby={emailError ? 'feedbackEmailError' : undefined}
+            />
+            {emailError && <p id="feedbackEmailError" className="mt-1 text-rose-600 dark:text-rose-300">{emailError}</p>}
+          </div>
+
+          <div>
             <label className="block font-medium text-slate-700 dark:text-slate-300 mb-1">
               Workflow Ease / Difficulty (1 = Very Easy, 5 = Confusing/Blocked)
             </label>
@@ -194,26 +206,20 @@ ${finalFeedback}
           </div>
         </div>
 
-        <div className="flex items-center justify-between border-t border-slate-100 dark:border-slate-800 pt-3">
+        <div className="flex flex-col gap-3 border-t border-slate-100 dark:border-slate-800 pt-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center space-x-1.5 text-slate-500 text-[11px]">
             <AlertCircle className="w-3.5 h-3.5" />
-            <span>Saves report to local Markdown file</span>
+            <span>Your completed form will open as a prefilled email to Pazera.</span>
           </div>
 
-          <div className="flex items-center space-x-2">
+          <div className="flex flex-wrap items-center justify-end gap-2">
             <button
-              onClick={handleCopy}
-              className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-medium text-xs transition-colors"
+              onClick={handleEmailPazeraTech}
+              className="flex items-center space-x-1.5 px-3.5 py-1.5 rounded-lg border border-sky-200 dark:border-sky-800 bg-sky-50 dark:bg-sky-950/40 hover:bg-sky-100 dark:hover:bg-sky-900/60 text-sky-700 dark:text-sky-300 font-medium text-xs transition-colors"
+              title="Open your email client to contact Pazera"
             >
-              {copied ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
-              <span>{copied ? 'Copied!' : 'Copy Markdown'}</span>
-            </button>
-            <button
-              onClick={handleExport}
-              className="flex items-center space-x-1.5 px-3.5 py-1.5 rounded-lg bg-sky-600 hover:bg-sky-500 text-white font-medium text-xs shadow-xs transition-colors"
-            >
-              <Download className="w-3.5 h-3.5" />
-              <span>Export Feedback (.md)</span>
+              <Mail className="w-3.5 h-3.5" />
+              <span>Email Pazera</span>
             </button>
           </div>
         </div>

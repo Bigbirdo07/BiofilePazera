@@ -1,0 +1,343 @@
+[
+  {
+    "case_id": "dev_001",
+    "ncbi_acc": "NP_000509.1",
+    "uniprot_acc": "P68871",
+    "ncbi_len": 147,
+    "canonical_len": 147,
+    "isoform_ids": [],
+    "isoform_lens": {}
+  },
+  {
+    "case_id": "dev_002",
+    "ncbi_acc": "NP_005219.2",
+    "uniprot_acc": "P00533",
+    "ncbi_len": 1210,
+    "canonical_len": 1210,
+    "isoform_ids": [
+      "P00533-1",
+      "P00533-2",
+      "P00533-3",
+      "P00533-4"
+    ],
+    "isoform_lens": {
+      "P00533-1": 1210,
+      "P00533-2": 405,
+      "P00533-3": 705,
+      "P00533-4": 628
+    }
+  },
+  {
+    "case_id": "dev_003",
+    "ncbi_acc": "YP_009724389.1",
+    "uniprot_acc": "P0DTD1",
+    "ncbi_len": 7096,
+    "canonical_len": 7096,
+    "isoform_ids": [
+      "P0DTD1-1",
+      "P0DTC1-1"
+    ],
+    "isoform_lens": {
+      "P0DTD1-1": 7096,
+      "P0DTC1-1": 4405
+    }
+  },
+  {
+    "case_id": "dev_004",
+    "ncbi_acc": "NP_061820.1",
+    "uniprot_acc": "P99999",
+    "ncbi_len": 105,
+    "canonical_len": 105,
+    "isoform_ids": [],
+    "isoform_lens": {}
+  },
+  {
+    "case_id": "dev_005",
+    "ncbi_acc": "NP_005359.1",
+    "uniprot_acc": "P02144",
+    "ncbi_len": 154,
+    "canonical_len": 154,
+    "isoform_ids": [],
+    "isoform_lens": {}
+  },
+  {
+    "case_id": "dev_006",
+    "ncbi_acc": "NP_000230.1",
+    "uniprot_acc": "P61626",
+    "ncbi_len": 148,
+    "canonical_len": 148,
+    "isoform_ids": [],
+    "isoform_lens": {}
+  },
+  {
+    "case_id": "dev_007",
+    "ncbi_acc": "NP_001005785.1",
+    "uniprot_acc": "Q13117",
+    "ncbi_len": 534,
+    "canonical_len": 558,
+    "isoform_ids": [
+      "Q13117-1",
+      "Q13117-2",
+      "Q13117-3"
+    ],
+    "isoform_lens": {
+      "Q13117-1": 558,
+      "Q13117-2": 366,
+      "Q13117-3": 534
+    }
+  },
+  {
+    "case_id": "dev_008",
+    "ncbi_acc": "NP_000536.3",
+    "uniprot_acc": "P20823",
+    "ncbi_len": 631,
+    "canonical_len": 631,
+    "isoform_ids": [
+      "P20823-1",
+      "P20823-2",
+      "P20823-3",
+      "P20823-4",
+      "P20823-5",
+      "P20823-6",
+      "P20823-7",
+      "P20823-8"
+    ],
+    "isoform_lens": {
+      "P20823-1": 631,
+      "P20823-2": 572,
+      "P20823-3": 524,
+      "P20823-4": 278,
+      "P20823-5": 247,
+      "P20823-6": 403,
+      "P20823-7": 662,
+      "P20823-8": 119
+    }
+  },
+  {
+    "case_id": "dev_009",
+    "ncbi_acc": "NP_000199.2",
+    "uniprot_acc": "P06213",
+    "ncbi_len": 1382,
+    "canonical_len": 1382,
+    "isoform_ids": [
+      "P06213-1",
+      "P06213-2"
+    ],
+    "isoform_lens": {
+      "P06213-1": 1382,
+      "P06213-2": 1370
+    }
+  },
+  {
+    "case_id": "gen_001",
+    "ncbi_acc": "NP_001185808.1",
+    "uniprot_acc": "B4DJ38",
+    "ncbi_len": 749,
+    "canonical_len": 749,
+    "isoform_ids": [],
+    "isoform_lens": {}
+  },
+  {
+    "case_id": "gen_002",
+    "ncbi_acc": "NP_000620.2",
+    "uniprot_acc": "P17181",
+    "ncbi_len": 557,
+    "canonical_len": 557,
+    "isoform_ids": [
+      "P17181-1",
+      "P17181-2",
+      "P17181-3",
+      "P17181-4"
+    ],
+    "isoform_lens": {
+      "P17181-1": 557,
+      "P17181-2": 434,
+      "P17181-3": 496,
+      "P17181-4": 488
+    }
+  },
+  {
+    "case_id": "gen_003",
+    "ncbi_acc": "NP_414542.1",
+    "uniprot_acc": "P0AD86",
+    "ncbi_len": 21,
+    "canonical_len": 21,
+    "isoform_ids": [],
+    "isoform_lens": {}
+  },
+  {
+    "case_id": "gen_004",
+    "ncbi_acc": "NP_002924.1",
+    "uniprot_acc": "P07998",
+    "ncbi_len": 156,
+    "canonical_len": 156,
+    "isoform_ids": [],
+    "isoform_lens": {}
+  },
+  {
+    "case_id": "gen_005",
+    "ncbi_acc": "NP_001082.2",
+    "uniprot_acc": "P19801",
+    "ncbi_len": 751,
+    "canonical_len": 751,
+    "isoform_ids": [
+      "P19801-1",
+      "P19801-2"
+    ],
+    "isoform_lens": {
+      "P19801-1": 751,
+      "P19801-2": 770
+    }
+  },
+  {
+    "case_id": "gen_006",
+    "ncbi_acc": "NP_000042.1",
+    "uniprot_acc": "Q13315",
+    "ncbi_len": 3056,
+    "canonical_len": 3056,
+    "isoform_ids": [],
+    "isoform_lens": {}
+  },
+  {
+    "case_id": "gen_007",
+    "ncbi_acc": "NP_000468.1",
+    "uniprot_acc": "P02768",
+    "ncbi_len": 609,
+    "canonical_len": 609,
+    "isoform_ids": [
+      "P02768-1",
+      "P02768-2",
+      "P02768-3"
+    ],
+    "isoform_lens": {
+      "P02768-1": 609,
+      "P02768-2": 417,
+      "P02768-3": 396
+    }
+  },
+  {
+    "case_id": "gen_008",
+    "ncbi_acc": "NP_000517.2",
+    "uniprot_acc": "P02533",
+    "ncbi_len": 472,
+    "canonical_len": 472,
+    "isoform_ids": [],
+    "isoform_lens": {}
+  },
+  {
+    "case_id": "gen_009",
+    "ncbi_acc": "NP_001005.1",
+    "uniprot_acc": "P46783",
+    "ncbi_len": 165,
+    "canonical_len": 165,
+    "isoform_ids": [],
+    "isoform_lens": {}
+  },
+  {
+    "case_id": "gen_010",
+    "ncbi_acc": "NP_001254714.1",
+    "uniprot_acc": "H9G2A1",
+    "ncbi_len": 250,
+    "canonical_len": 250,
+    "isoform_ids": [],
+    "isoform_lens": {}
+  },
+  {
+    "case_id": "holdout_001",
+    "ncbi_acc": "YP_009724397.2",
+    "uniprot_acc": "P0DTC9",
+    "ncbi_len": 419,
+    "canonical_len": 419,
+    "isoform_ids": [],
+    "isoform_lens": {}
+  },
+  {
+    "case_id": "holdout_002",
+    "ncbi_acc": "NP_001009071.1",
+    "uniprot_acc": "Q9XT09",
+    "ncbi_len": 393,
+    "canonical_len": 393,
+    "isoform_ids": [],
+    "isoform_lens": {}
+  },
+  {
+    "case_id": "holdout_003",
+    "ncbi_acc": "NP_000109.1",
+    "uniprot_acc": "P17813",
+    "ncbi_len": 625,
+    "canonical_len": 658,
+    "isoform_ids": [
+      "P17813-1",
+      "P17813-2"
+    ],
+    "isoform_lens": {
+      "P17813-1": 658,
+      "P17813-2": 625
+    }
+  },
+  {
+    "case_id": "holdout_004",
+    "ncbi_acc": "NP_002737.2",
+    "uniprot_acc": "P27361",
+    "ncbi_len": 379,
+    "canonical_len": 379,
+    "isoform_ids": [
+      "P27361-1",
+      "P27361-2",
+      "P27361-3"
+    ],
+    "isoform_lens": {
+      "P27361-1": 379,
+      "P27361-2": 335,
+      "P27361-3": 357
+    }
+  },
+  {
+    "case_id": "holdout_005",
+    "ncbi_acc": "WP_011012956.1",
+    "uniprot_acc": "Q8U008",
+    "ncbi_len": 113,
+    "canonical_len": 113,
+    "isoform_ids": [],
+    "isoform_lens": {}
+  },
+  {
+    "case_id": "holdout_006",
+    "ncbi_acc": "NP_001014431.1",
+    "uniprot_acc": "P31749",
+    "ncbi_len": 480,
+    "canonical_len": 480,
+    "isoform_ids": [
+      "P31749-1",
+      "P31749-2"
+    ],
+    "isoform_lens": {
+      "P31749-1": 480,
+      "P31749-2": 418
+    }
+  },
+  {
+    "case_id": "holdout_009",
+    "ncbi_acc": "NP_000312.2",
+    "uniprot_acc": "P06400",
+    "ncbi_len": 928,
+    "canonical_len": 928,
+    "isoform_ids": [],
+    "isoform_lens": {}
+  },
+  {
+    "case_id": "holdout_010",
+    "ncbi_acc": "NP_003343.1",
+    "uniprot_acc": "P63165",
+    "ncbi_len": 101,
+    "canonical_len": 101,
+    "isoform_ids": [
+      "P63165-1",
+      "P63165-2"
+    ],
+    "isoform_lens": {
+      "P63165-1": 101,
+      "P63165-2": 76
+    }
+  }
+]

@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { RotateCw, ZoomIn, ZoomOut, Activity, Box, Globe, Sparkles } from 'lucide-react';
+import { Pause, Play, Move, ZoomIn, ZoomOut, Activity, Box, Globe, Sparkles } from 'lucide-react';
 import { ProteinAtom, parsePdbAtoms } from '../../utils/proteinStudio';
 
 
@@ -16,7 +16,16 @@ interface Pdb3DViewerProps {
   detectedProteinName?: string;
   detectedOrganism?: string;
   onFetchAlphaFoldRequested?: (accession: string) => void;
-  highlightedResidue?: number | null;
+  highlightedResidue?: number | string | null;
+  overlayHighlightedResidue?: number | string | null;
+  overlayPdbText?: string;
+  overlayVisible?: boolean;
+  primaryVisible?: boolean;
+  showControls?: boolean;
+  showCameraControls?: boolean;
+  showStatus?: boolean;
+  autoRotateOverride?: boolean;
+  backgroundColor?: string;
   onResidueSelected?: (atom: ProteinAtom) => void;
   className?: string;
 }
@@ -35,6 +44,15 @@ export const Pdb3DViewer: React.FC<Pdb3DViewerProps> = ({
   detectedOrganism,
   onFetchAlphaFoldRequested,
   highlightedResidue,
+  overlayHighlightedResidue,
+  overlayPdbText,
+  overlayVisible = true,
+  primaryVisible = true,
+  showControls = true,
+  showCameraControls = true,
+  showStatus = true,
+  autoRotateOverride,
+  backgroundColor = '#020617',
   onResidueSelected,
   className = '',
 }) => {
@@ -42,8 +60,10 @@ export const Pdb3DViewer: React.FC<Pdb3DViewerProps> = ({
   const nglContainerRef = useRef<HTMLDivElement>(null);
   const nglStageRef = useRef<any>(null);
   const nglComponentRef = useRef<any>(null);
+  const nglOverlayComponentRef = useRef<any>(null);
   const nglModuleRef = useRef<any>(null);
   const nglResizeObserverRef = useRef<ResizeObserver | null>(null);
+  const nglHoverRepresentationRef = useRef<any>(null);
   // Retained only for the legacy rendering block below; the visible surface is NGL.
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const projectedRef = useRef<Array<{ px: number; py: number; atom: ProteinAtom }>>([]);
@@ -52,9 +72,13 @@ export const Pdb3DViewer: React.FC<Pdb3DViewerProps> = ({
   const [renderMode, setRenderMode] = useState<'ribbon' | 'trace' | 'spheres'>('ribbon');
   const [colorMode, setColorMode] = useState<'plddt' | 'chain' | 'spectrum' | 'bfactor'>('plddt');
   const [autoRotate, setAutoRotate] = useState<boolean>(true);
+  const [panMode, setPanMode] = useState<boolean>(false);
+  const [viewerReady, setViewerReady] = useState<boolean>(false);
+  const [hoveredAtom, setHoveredAtom] = useState<ProteinAtom | null>(null);
   const rotationRef = useRef<{ rx: number; ry: number }>({ rx: 0.3, ry: 0.5 });
   const zoomRef = useRef<number>(1.0);
   const isDraggingRef = useRef<boolean>(false);
+  const dragModeRef = useRef<'rotate' | 'pan'>('rotate');
   const lastMouseRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
 
   useEffect(() => {
@@ -69,6 +93,12 @@ export const Pdb3DViewer: React.FC<Pdb3DViewerProps> = ({
   useEffect(() => {
     if (renderModeOverride) setRenderMode(renderModeOverride);
   }, [renderModeOverride]);
+
+  useEffect(() => {
+    if (autoRotateOverride === undefined) return;
+    setAutoRotate(autoRotateOverride);
+    nglStageRef.current?.setSpin(autoRotateOverride);
+  }, [autoRotateOverride]);
 
   // Parse PDB text strictly — DO NOT fabricate 3D coordinates if no ATOM records exist
   useEffect(() => {
@@ -90,54 +120,156 @@ export const Pdb3DViewer: React.FC<Pdb3DViewerProps> = ({
     let cancelled = false;
     let stage: any = null;
     let clickHandler: ((pickingProxy: any) => void) | null = null;
+    let hoverHandler: ((pickingProxy: any) => void) | null = null;
+    const applyRepresentation = (component: any, overlay = false) => {
+      component.removeAllRepresentations();
+      const selection = selectedChain === 'ALL' ? 'protein' : `:${selectedChain} and protein`;
+      const color = overlay ? '#f97316' : colorMode === 'plddt' && isAlphaFoldModel ? 'bfactor' : colorMode === 'chain' ? 'chainname' : colorMode === 'spectrum' ? 'residueindex' : 'bfactor';
+      const representation = renderMode === 'ribbon' ? 'cartoon' : renderMode === 'trace' ? 'backbone' : 'spacefill';
+      component.addRepresentation(representation, {
+        sele: renderMode === 'spheres' ? `${selection} and .CA` : selection,
+        color,
+        quality: 'high',
+        smoothSheet: true,
+        radius: renderMode === 'spheres' ? 1.15 : undefined,
+      });
+      const residueToHighlight = overlay ? overlayHighlightedResidue : highlightedResidue;
+      if (residueToHighlight !== undefined && residueToHighlight !== null) {
+        component.addRepresentation('ball+stick', { sele: `${selection} and resi ${residueToHighlight}`, color: '#facc15', quality: 'high', scale: 1.35 });
+      }
+    };
     const initialize = async () => {
-      const ngl = nglModuleRef.current || await import('ngl');
-      if (cancelled) return;
-      nglModuleRef.current = ngl;
-      stage = nglStageRef.current || new ngl.Stage(container, { backgroundColor: '#020617', quality: 'high', impostor: true });
-      nglStageRef.current = stage;
-      stage.removeAllComponents();
-      const ext = /\.mm?cif$/i.test(filename) ? 'cif' : 'pdb';
-      const component = await stage.loadFile(new Blob([pdbText], { type: 'text/plain' }), { ext });
-      if (cancelled) return;
-      nglComponentRef.current = component;
-      component.autoView(900);
-      stage.setSpin(autoRotate);
-      clickHandler = (pickingProxy: any) => {
-        const atom = pickingProxy?.atom;
-        if (!atom || !onResidueSelectedRef.current) return;
-        onResidueSelectedRef.current({
-          serial: atom.serialno || 0, name: atom.name || 'CA', resName: atom.resname || '',
-          x: atom.x, y: atom.y, z: atom.z, chainID: atom.chainname || atom.chainid || '',
-          resSeq: atom.resno, residueIndex: atom.resno, aa: atom.resname || '', bFactor: atom.bfactor || 0,
-        });
-      };
-      stage.signals.clicked.add(clickHandler);
-      const resizeObserver = new ResizeObserver(() => stage.handleResize());
-      resizeObserver.observe(container);
-      nglResizeObserverRef.current = resizeObserver;
+      try {
+        const ngl = nglModuleRef.current || await import('ngl');
+        if (cancelled) return;
+        nglModuleRef.current = ngl;
+        stage = nglStageRef.current || new ngl.Stage(container, { backgroundColor, quality: 'high', impostor: true });
+        nglStageRef.current = stage;
+        stage.removeAllComponents();
+        nglComponentRef.current = null;
+        nglOverlayComponentRef.current = null;
+        const ext = /\.mm?cif$/i.test(filename) ? 'cif' : 'pdb';
+        const component = await stage.loadFile(new Blob([pdbText], { type: 'text/plain' }), { ext });
+        if (cancelled) {
+          component.dispose?.();
+          return;
+        }
+        nglComponentRef.current = component;
+        if (primaryVisible) applyRepresentation(component);
+        if (overlayPdbText && overlayVisible) {
+          const overlayComponent = await stage.loadFile(new Blob([overlayPdbText], { type: 'text/plain' }), { ext });
+          if (cancelled) {
+            overlayComponent.dispose?.();
+            return;
+          }
+          nglOverlayComponentRef.current = overlayComponent;
+          applyRepresentation(overlayComponent, true);
+        }
+        if (cancelled) return;
+        component.autoView(900);
+        stage.setSpin(autoRotateOverride ?? autoRotate);
+        clickHandler = (pickingProxy: any) => {
+          const atom = pickingProxy?.atom;
+          if (!atom || !onResidueSelectedRef.current) return;
+          const isOverlay = pickingProxy?.component === nglOverlayComponentRef.current;
+          onResidueSelectedRef.current({
+            serial: atom.serialno || 0, name: atom.name || 'CA', resName: atom.resname || '',
+            x: atom.x, y: atom.y, z: atom.z, chainID: atom.chainname || atom.chainid || '',
+            resSeq: atom.resno, authorResidueNumber: `${atom.resno}${atom.inscode || ''}`, residueIndex: atom.resno, aa: atom.resname || '', bFactor: atom.bfactor || 0,
+            structureSource: isOverlay ? 'EXPERIMENTAL' : isAlphaFoldModel ? 'ALPHAFOLD' : 'LOCAL',
+          });
+        };
+        hoverHandler = (pickingProxy: any) => {
+          const atom = pickingProxy?.atom;
+          if (!atom) {
+            setHoveredAtom(null);
+            return;
+          }
+          const isOverlay = pickingProxy?.component === nglOverlayComponentRef.current;
+          setHoveredAtom({
+            serial: atom.serialno || 0, name: atom.name || 'CA', resName: atom.resname || '',
+            x: atom.x, y: atom.y, z: atom.z, chainID: atom.chainname || atom.chainid || '',
+            resSeq: atom.resno, authorResidueNumber: `${atom.resno}${atom.inscode || ''}`, residueIndex: atom.resno, aa: atom.resname || '', bFactor: atom.bfactor || 0,
+            structureSource: isOverlay ? 'EXPERIMENTAL' : isAlphaFoldModel ? 'ALPHAFOLD' : 'LOCAL',
+          });
+        };
+        stage.signals.clicked.add(clickHandler);
+        stage.signals.hovered.add(hoverHandler);
+        const resizeObserver = new ResizeObserver(() => stage.handleResize());
+        resizeObserver.observe(container);
+        nglResizeObserverRef.current = resizeObserver;
+        setViewerReady(true);
+      } catch (error) {
+        if (!cancelled) console.error('NGL structure load failed:', error);
+      }
     };
     void initialize();
 
     return () => {
       cancelled = true;
+      setViewerReady(false);
+      setHoveredAtom(null);
+      nglHoverRepresentationRef.current?.dispose?.();
+      nglHoverRepresentationRef.current = null;
       nglResizeObserverRef.current?.disconnect();
       nglResizeObserverRef.current = null;
       if (stage && clickHandler) stage.signals.clicked.remove(clickHandler);
+      if (stage && hoverHandler) stage.signals.hovered.remove(hoverHandler);
+      if (stage === nglStageRef.current) {
+        stage.removeAllComponents();
+        nglComponentRef.current = null;
+        nglOverlayComponentRef.current = null;
+      }
     };
-  }, [pdbText, filename, selectedChain, atoms.length]);
+  }, [pdbText, filename, selectedChain, atoms.length, overlayPdbText, overlayVisible, primaryVisible, backgroundColor]);
+
+  // NGL owns the viewport mouse gestures. Change its left-drag action for the
+  // explicit Pan mode so rotation and translation do not compete.
+  useEffect(() => {
+    const stage = nglStageRef.current;
+    const mouseActions = nglModuleRef.current?.MouseActions;
+    if (!stage || !viewerReady || !mouseActions) return;
+    stage.mouseControls.remove('drag-left');
+    stage.mouseControls.add('drag-left', panMode ? mouseActions.panDrag : mouseActions.rotateDrag);
+  }, [panMode, viewerReady]);
 
   useEffect(() => () => {
     nglResizeObserverRef.current?.disconnect();
     nglStageRef.current?.dispose();
+    nglHoverRepresentationRef.current?.dispose?.();
     nglStageRef.current = null;
     nglComponentRef.current = null;
+    nglOverlayComponentRef.current = null;
   }, []);
+
+  // Highlight the exact residue returned by NGL's picking signal. This uses
+  // the picked chain and residue number, rather than a screen-space guess.
+  useEffect(() => {
+    const component = nglComponentRef.current;
+    const overlayComponent = nglOverlayComponentRef.current;
+    nglHoverRepresentationRef.current?.dispose?.();
+    nglHoverRepresentationRef.current = null;
+    if (!component || !hoveredAtom) return;
+
+    const target = hoveredAtom.structureSource === 'EXPERIMENTAL' ? overlayComponent : component;
+    if (!target) return;
+    const chainSelection = hoveredAtom.chainID ? `:${hoveredAtom.chainID} and ` : '';
+    nglHoverRepresentationRef.current = target.addRepresentation('ball+stick', {
+      sele: `${chainSelection}resi ${hoveredAtom.resSeq}`,
+      color: '#facc15',
+      quality: 'high',
+      scale: 1.45,
+    });
+  }, [hoveredAtom, viewerReady, renderMode, colorMode, selectedChain, overlayVisible, primaryVisible]);
 
   useEffect(() => {
     const component = nglComponentRef.current;
     if (!component) return;
     component.removeAllRepresentations();
+    if (!primaryVisible) {
+      if (nglOverlayComponentRef.current) nglOverlayComponentRef.current.setVisibility(overlayVisible);
+      return;
+    }
     const selection = selectedChain === 'ALL' ? 'protein' : `:${selectedChain} and protein`;
     const color = colorMode === 'plddt' && isAlphaFoldModel ? 'bfactor' : colorMode === 'chain' ? 'chainname' : colorMode === 'spectrum' ? 'residueindex' : 'bfactor';
     const representation = renderMode === 'ribbon' ? 'cartoon' : renderMode === 'trace' ? 'backbone' : 'spacefill';
@@ -151,7 +283,15 @@ export const Pdb3DViewer: React.FC<Pdb3DViewerProps> = ({
     if (highlightedResidue) {
       component.addRepresentation('ball+stick', { sele: `${selection} and resi ${highlightedResidue}`, color: '#facc15', quality: 'high', scale: 1.35 });
     }
-  }, [renderMode, colorMode, isAlphaFoldModel, selectedChain, highlightedResidue]);
+    if (nglOverlayComponentRef.current && overlayVisible) {
+      nglOverlayComponentRef.current.setVisibility(true);
+      nglOverlayComponentRef.current.removeAllRepresentations();
+      nglOverlayComponentRef.current.addRepresentation(representation, { sele: renderMode === 'spheres' ? `${selection} and .CA` : selection, color: '#f97316', quality: 'high', smoothSheet: true, radius: renderMode === 'spheres' ? 1.15 : undefined });
+      if (overlayHighlightedResidue !== undefined && overlayHighlightedResidue !== null) {
+        nglOverlayComponentRef.current.addRepresentation('ball+stick', { sele: `${selection} and resi ${overlayHighlightedResidue}`, color: '#facc15', quality: 'high', scale: 1.35 });
+      }
+    } else if (nglOverlayComponentRef.current) nglOverlayComponentRef.current.setVisibility(false);
+  }, [renderMode, colorMode, isAlphaFoldModel, selectedChain, highlightedResidue, overlayHighlightedResidue, overlayVisible, primaryVisible]);
 
   // Color lookup helper
   const getAtomColor = (atom: ProteinAtom, idx: number, total: number): string => {
@@ -331,7 +471,10 @@ export const Pdb3DViewer: React.FC<Pdb3DViewerProps> = ({
   }, [atoms, renderMode, colorMode, autoRotate, highlightedResidue]);
 
   const handleMouseDown = (e: React.MouseEvent) => {
+    if (e.button !== 0 && e.button !== 1 && e.button !== 2) return;
+    if (e.shiftKey || e.button === 1 || e.button === 2) e.preventDefault();
     isDraggingRef.current = true;
+    dragModeRef.current = panMode || e.shiftKey || e.button !== 0 ? 'pan' : 'rotate';
     lastMouseRef.current = { x: e.clientX, y: e.clientY };
   };
 
@@ -340,23 +483,37 @@ export const Pdb3DViewer: React.FC<Pdb3DViewerProps> = ({
     const dx = e.clientX - lastMouseRef.current.x;
     const dy = e.clientY - lastMouseRef.current.y;
 
-    rotationRef.current.ry += dx * 0.008;
-    rotationRef.current.rx += dy * 0.008;
+    if (dragModeRef.current === 'pan' && !panMode) {
+      nglStageRef.current?.viewerControls?.pan(dx, dy);
+    } else if (dragModeRef.current === 'rotate' && !panMode) {
+      rotationRef.current.ry += dx * 0.008;
+      rotationRef.current.rx += dy * 0.008;
+    }
 
     lastMouseRef.current = { x: e.clientX, y: e.clientY };
   };
 
   const handleMouseUp = () => {
     isDraggingRef.current = false;
+    dragModeRef.current = 'rotate';
+  };
+
+  const handleContextMenu = (e: React.MouseEvent) => {
+    e.preventDefault();
+  };
+
+  const adjustCameraZoom = (direction: 1 | -1) => {
+    const controls = nglStageRef.current?.viewerControls;
+    if (!controls?.getCameraDistance || !controls?.distance) return;
+    const currentDistance = controls.getCameraDistance();
+    // A multiplicative step keeps zoom behavior consistent across structures
+    // with very different bounding-box sizes.
+    controls.distance(currentDistance * (direction > 0 ? 0.88 : 1.14));
   };
 
   const handleWheel = (e: React.WheelEvent) => {
     e.preventDefault();
-    if (e.deltaY < 0) {
-      zoomRef.current = Math.min(3.5, zoomRef.current * 1.1);
-    } else {
-      zoomRef.current = Math.max(0.3, zoomRef.current * 0.9);
-    }
+    adjustCameraZoom(e.deltaY < 0 ? 1 : -1);
   };
 
   // Render Empty State or 3D STRUCTURE AVAILABLE Callout if no 3D coordinates are loaded
@@ -419,8 +576,8 @@ export const Pdb3DViewer: React.FC<Pdb3DViewerProps> = ({
 
         <div className="p-3 bg-slate-900/80 border border-slate-800 rounded-lg text-[11px] text-slate-400 max-w-md font-mono text-left space-y-1">
           <div className="font-bold text-slate-300">How to load a 3D structure:</div>
-          <div>• Header contains UniProt ID (e.g. P01308)</div>
-          <div>• Header contains RefSeq ID (e.g. NP_000198.1)</div>
+          <div>• Header contains a UniProt accession</div>
+          <div>• Header contains a RefSeq protein accession</div>
           <div>• Upload a local .pdb or .mmcif structure file</div>
         </div>
       </div>
@@ -432,7 +589,7 @@ export const Pdb3DViewer: React.FC<Pdb3DViewerProps> = ({
   return (
     <div className={`relative w-full h-[clamp(520px,60vh,760px)] min-h-[520px] bg-slate-950 rounded-xl border border-slate-800 overflow-hidden flex flex-col justify-between shadow-inner select-none ${className}`}>
       {/* 3D Toolbar Controls */}
-      <div className="absolute top-3 left-3 z-10 flex items-center space-x-2 bg-slate-900/80 backdrop-blur border border-slate-800 p-1.5 rounded-lg text-xs text-slate-300">
+      {showControls && <div className="absolute top-3 left-3 z-10 flex items-center space-x-2 bg-slate-900/80 backdrop-blur border border-slate-800 p-1.5 rounded-lg text-xs text-slate-300">
         <button
           onClick={() => setRenderMode('ribbon')}
           className={`px-2.5 py-1 rounded text-[11px] font-semibold transition-colors cursor-pointer ${
@@ -497,30 +654,42 @@ export const Pdb3DViewer: React.FC<Pdb3DViewerProps> = ({
         >
           Spectrum
         </button>
-      </div>
+      </div>}
 
       {/* Top Right Camera Actions */}
-      <div className="absolute top-3 right-3 z-10 flex items-center space-x-1 bg-slate-900/80 backdrop-blur border border-slate-800 p-1 rounded-lg text-slate-300">
+      {showCameraControls && <div className="absolute top-3 right-3 z-10 flex items-center space-x-1 bg-slate-900/80 backdrop-blur border border-slate-800 p-1 rounded-lg text-slate-300">
+        <button
+          onClick={() => setPanMode((current) => !current)}
+          title={panMode ? 'Disable pan mode' : 'Enable pan mode, then drag to move the structure'}
+          aria-label={panMode ? 'Disable pan mode' : 'Enable pan mode, then drag to move the structure'}
+          aria-pressed={panMode}
+          className={`flex items-center gap-1 p-1.5 rounded hover:bg-slate-800 cursor-pointer ${panMode ? 'bg-sky-700 text-white' : 'text-slate-300'}`}
+        >
+          <Move className="w-4 h-4" />
+          <span className="text-[10px] font-mono">Pan</span>
+        </button>
         <button
           onClick={() => {
             const next = !autoRotate;
             setAutoRotate(next);
             nglStageRef.current?.setSpin(next);
           }}
-          title="Toggle 3D Auto-Rotation"
+          title={autoRotate ? 'Pause automatic rotation' : 'Resume automatic rotation'}
+          aria-label={autoRotate ? 'Pause automatic rotation' : 'Resume automatic rotation'}
+          aria-pressed={!autoRotate}
           className={`p-1.5 rounded hover:bg-slate-800 cursor-pointer ${autoRotate ? 'text-sky-400' : 'text-slate-500'}`}
         >
-          <RotateCw className="w-4 h-4" />
+          {autoRotate ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
         </button>
         <button
-          onClick={() => nglStageRef.current?.viewerControls.zoom(-1)}
+          onClick={() => adjustCameraZoom(1)}
           title="Zoom In"
           className="p-1.5 rounded hover:bg-slate-800 text-slate-300 cursor-pointer"
         >
           <ZoomIn className="w-4 h-4" />
         </button>
         <button
-          onClick={() => nglStageRef.current?.viewerControls.zoom(1)}
+          onClick={() => adjustCameraZoom(-1)}
           title="Zoom Out"
           className="p-1.5 rounded hover:bg-slate-800 text-slate-300 cursor-pointer"
         >
@@ -535,7 +704,7 @@ export const Pdb3DViewer: React.FC<Pdb3DViewerProps> = ({
         >
           Reset
         </button>
-      </div>
+      </div>}
 
       {/* Interactive Canvas 3D View */}
       <div
@@ -545,12 +714,20 @@ export const Pdb3DViewer: React.FC<Pdb3DViewerProps> = ({
         onMouseUp={handleMouseUp}
         onMouseLeave={handleMouseUp}
         onWheel={handleWheel}
+        onContextMenu={handleContextMenu}
         className="w-full h-full min-h-0 cursor-grab active:cursor-grabbing"
         aria-label="Interactive protein structure viewer"
       />
 
+      {hoveredAtom && (
+        <div className="pointer-events-none absolute bottom-14 left-3 z-10 border border-yellow-400/40 bg-slate-950/90 px-2.5 py-1.5 text-[11px] text-yellow-100 shadow-sm">
+          Picked atom: {hoveredAtom.name} · residue {hoveredAtom.resName || hoveredAtom.aa} {hoveredAtom.authorResidueNumber || hoveredAtom.resSeq}
+          {hoveredAtom.chainID ? ` · chain ${hoveredAtom.chainID}` : ''}
+        </div>
+      )}
+
       {/* Status Overlay Footer */}
-      <div className="bg-slate-900/90 border-t border-slate-800 px-4 py-2 flex items-center justify-between text-[11px] text-slate-400 z-10">
+      {showStatus && <div className="bg-slate-900/90 border-t border-slate-800 px-4 py-2 flex items-center justify-between text-[11px] text-slate-400 z-10">
         <div className="flex items-center space-x-2">
           <Activity className="w-3.5 h-3.5 text-sky-400" />
           <span className="font-mono text-slate-200">{filename}</span>
@@ -558,8 +735,8 @@ export const Pdb3DViewer: React.FC<Pdb3DViewerProps> = ({
           <span>{atoms.length} Cα Residues</span>
           {selectedChain !== 'ALL' && <span className="text-sky-400 font-bold">• Chain {selectedChain}</span>}
         </div>
-        <span className="text-[10px] text-slate-500 font-mono">Drag to Rotate • Scroll to Zoom</span>
-      </div>
+        <span className="text-[10px] text-slate-500 font-mono">Drag to Rotate • Pan button to move • Scroll to Zoom</span>
+      </div>}
     </div>
   );
 };

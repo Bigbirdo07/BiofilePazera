@@ -246,7 +246,7 @@ pub fn split_sequence_file<P: AsRef<Path>>(
     }
 
     let manifest = SplitManifest {
-        tool: "BioFile Toolkit".to_string(),
+        tool: "PazAtlas".to_string(),
         version: "1.0.0".to_string(),
         timestamp: chrono::Local::now().to_rfc3339(),
         original_filename: orig_checksum.file_name,

@@ -142,6 +142,14 @@ pub fn translate_sequence(
     selected_frame: Option<i8>, // None means all 6 frames
     stop_at_stop_codon: bool,
 ) -> TranslationResponse {
+    let clean_seq: String = seq
+        .lines()
+        .filter(|line| !line.trim_start().starts_with('>'))
+        .flat_map(|line| line.chars())
+        .filter(|character| !character.is_whitespace())
+        .collect::<String>()
+        .to_uppercase();
+
     let frames_to_run = match selected_frame {
         Some(f) => vec![f],
         None => vec![1, 2, 3, -1, -2, -3],
@@ -149,7 +157,7 @@ pub fn translate_sequence(
 
     let results = frames_to_run
         .into_iter()
-        .map(|f| translate_frame(seq, f, stop_at_stop_codon))
+        .map(|f| translate_frame(&clean_seq, f, stop_at_stop_codon))
         .collect();
 
     TranslationResponse { frames: results }

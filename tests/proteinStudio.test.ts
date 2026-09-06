@@ -13,6 +13,15 @@ import {
   plddtCategory,
   summarizePlddt,
   validateMutationInput,
+  isDisorderFeature,
+  isPtmFeature,
+  parseRcsbEvidencePayload,
+  mapEntitySequenceToCanonical,
+  mapPdbResidueToCanonical,
+  mapCanonicalToPdbResidue,
+  kabschSuperpose,
+  alignProteinSequences,
+  analyzeSequenceCompatibility,
 } from '../src/utils/proteinStudio.ts';
 
 const insulinFasta = `>sp|P01308|INS_HUMAN Insulin OS=Homo sapiens OX=9606 GN=INS PE=1 SV=1
@@ -130,6 +139,8 @@ function testUniProtBiologyParser() {
     features: [
       { type: 'Signal peptide', location: { start: { value: 1 }, end: { value: 24 } } },
       { type: 'Disulfide bond', description: 'A-B chain bond', location: { start: { value: 31 }, end: { value: 96 } } },
+      { type: 'Region', description: 'Intrinsically disordered region', location: { start: { value: 1 }, end: { value: 10 } } },
+      { type: 'Modified residue', description: 'Phosphoserine', location: { position: { value: 15 } } },
     ],
     uniProtKBCrossReferences: [
       { database: 'PDB', id: '1ZNI', properties: [{ key: 'Method', value: 'X-ray' }, { key: 'Resolution', value: '1.5 A' }] },
@@ -141,8 +152,22 @@ function testUniProtBiologyParser() {
   assert.equal(biology?.subcellularLocation, 'Secreted.');
   assert.deepEqual(biology?.features[0], { type: 'Signal peptide', description: undefined, start: 1, end: 24 });
   assert.deepEqual(biology?.experimentalStructures, [{ id: '1ZNI', method: 'X-ray', resolution: '1.5 A' }]);
+  assert.equal(isDisorderFeature(biology!.features[2]), true);
+  assert.equal(isPtmFeature(biology!.features[3]), true);
   assert.equal(parseUniProtBiology({ primaryAccession: 'P01308' })?.features.length, 0);
   assert.equal(parseUniProtBiology({}), null);
+
+  const currentApiShape = parseUniProtBiology({
+    primaryAccession: 'P00533',
+    comments: [
+      { commentType: 'FUNCTION', texts: [{ value: 'Functions as a receptor tyrosine kinase.' }] },
+      { commentType: 'SUBCELLULAR LOCATION', subcellularLocations: [{ location: { value: 'Cell membrane' }, topology: { value: 'Single-pass type I membrane protein' } }] },
+      { commentType: 'COFACTOR', cofactor: { name: 'Zinc', note: { texts: [{ value: 'Required for activity.' }] } } },
+    ],
+  });
+  assert.equal(currentApiShape?.functionText, 'Functions as a receptor tyrosine kinase.');
+  assert.equal(currentApiShape?.subcellularLocation, 'Cell membrane; Single-pass type I membrane protein');
+  assert.equal(currentApiShape?.cofactors, 'Zinc; Required for activity.');
 }
 
 function testMutationValidation() {
@@ -176,6 +201,144 @@ function testStateResetInvariant() {
   assert.equal(state.plddtVisible, false);
 }
 
+function testRcsbEvidenceMapping() {
+  const detail = parseRcsbEvidencePayload({
+    entry: {
+      exptl: [{ method: 'X-RAY DIFFRACTION' }],
+      rcsb_entry_info: { resolution_combined: [2.05] },
+      rcsb_accession_info: { initial_release_date: '2019-06-14' },
+    },
+    polymerEntities: [{
+      rcsb_polymer_entity_container_identifiers: {
+        entity_id: '1',
+        auth_asym_ids: ['A', 'C'],
+        asym_ids: ['A', 'C'],
+        reference_sequence_identifiers: [{ database_name: 'UniProt', database_accession: 'P04637' }],
+      },
+      entity_poly: { pdbx_seq_one_letter_code_can: 'MEEPQSDPSV' },
+      rcsb_polymer_entity_align: [{ provenance_source: 'SIFTS', reference_database_name: 'UniProt', reference_database_accession: 'P04637', aligned_regions: [{ entity_beg_seq_id: 1, ref_beg_seq_id: 12, length: 10 }] }],
+    }, {
+      rcsb_polymer_entity_container_identifiers: { auth_asym_ids: ['B'] },
+      entity_poly: { type: 'polyribonucleotide' },
+      rcsb_polymer_entity: { pdbx_description: 'RNA partner' },
+    }],
+    polymerInstances: [{
+      rcsb_polymer_entity_instance_container_identifiers: {
+        entity_id: '1', asym_id: 'A', auth_asym_id: 'A', auth_to_entity_poly_seq_mapping: ['1', '2', '3'],
+      },
+    }],
+    nonpolymerEntities: [{
+      rcsb_nonpolymer_entity_container_identifiers: { non_polymer_comp_id: 'ZN' },
+      nonpolymer_comp: { chem_comp: { id: 'ZN', name: 'ZINC ION', type: 'ION' } },
+    }],
+  }, '2ABC', 'P04637', 'MEEPQSDPSV');
+  assert.deepEqual(detail.chains, ['A', 'C']);
+  assert.deepEqual(detail.asymIds, ['A', 'C']);
+  assert.deepEqual(detail.entityIds, ['1']);
+  assert.equal(detail.mappingStatus, 'MAPPED_EXPLICITLY');
+  assert.equal(detail.mappedCanonicalStart, 12);
+  assert.equal(detail.mappedCanonicalEnd, 21);
+  assert.equal(detail.residueMappings.length, 3);
+  assert.equal(mapPdbResidueToCanonical(detail, 'A', '2'), 13);
+  assert.equal(mapCanonicalToPdbResidue(detail, 13, 'A')?.authorResidueNumber, '2');
+  assert.equal(detail.mappingSource, 'RCSB_UNIPROT');
+  assert.equal(detail.sequenceIdentity, 100);
+  assert.equal(detail.resolvedResidues, undefined);
+  assert.equal(detail.otherMolecules.length, 2);
+  const unavailable = parseRcsbEvidencePayload({}, '2ABC', 'P04637', 'MEEPQSDPSV');
+  assert.equal(unavailable.mappingConfidence, 'UNAVAILABLE');
+  assert.equal(unavailable.mappingStatus, 'PARSER_ERROR');
+  const networkError = parseRcsbEvidencePayload({}, '2ABC', 'P04637', 'MEEPQSDPSV', 'NETWORK_ERROR');
+  assert.equal(networkError.mappingStatus, 'NETWORK_ERROR');
+}
+
+function testDiscontinuousSiftsMapping() {
+  const detail = parseRcsbEvidencePayload({
+    entry: {},
+    polymerEntities: [{
+      rcsb_polymer_entity_container_identifiers: {
+        entity_id: '1', asym_ids: ['A'], auth_asym_ids: ['A'], uniprot_ids: ['P99999'],
+      },
+      entity_poly: { pdbx_seq_one_letter_code_can: 'AAAA' },
+      rcsb_polymer_entity_align: [{ reference_database_name: 'UniProt', reference_database_accession: 'P99999', aligned_regions: [
+        { entity_beg_seq_id: 1, ref_beg_seq_id: 100, length: 2 },
+        { entity_beg_seq_id: 4, ref_beg_seq_id: 200, length: 1 },
+      ] }],
+    }],
+    polymerInstances: [{ rcsb_polymer_entity_instance_container_identifiers: { entity_id: '1', asym_id: 'A', auth_asym_id: 'A', auth_to_entity_poly_seq_mapping: ['70', '71', '72', '73'] } }],
+  }, '9XYZ', 'P99999', 'A'.repeat(250));
+  assert.equal(mapEntitySequenceToCanonical(detail, 1), 100);
+  assert.equal(mapEntitySequenceToCanonical(detail, 2), 101);
+  assert.equal(mapEntitySequenceToCanonical(detail, 3), undefined);
+  assert.equal(mapPdbResidueToCanonical(detail, 'A', '73'), 200);
+}
+
+function testKabschSuperposition() {
+  const reference = [{ x: 0, y: 0, z: 0 }, { x: 1, y: 0, z: 0 }, { x: 0, y: 1, z: 0 }, { x: 0, y: 0, z: 1 }];
+  const mobile = reference.map((point) => ({ x: -point.y + 4, y: point.x - 2, z: point.z + 7 }));
+  assert.ok(kabschSuperpose(reference, reference).rmsd < 1e-8);
+  assert.ok(kabschSuperpose(reference, mobile).rmsd < 1e-6);
+  assert.throws(() => kabschSuperpose(reference.slice(0, 2), mobile.slice(0, 2)), /at least 3/i);
+  const perturbed = mobile.map((point, index) => index === 3 ? { ...point, z: point.z + 0.5 } : point);
+  assert.ok(kabschSuperpose(reference, perturbed).rmsd > 0.05);
+}
+
+async function testSequenceCompatibilityLayer() {
+  // 1. Exact Canonical Match
+  const seq1 = 'MEEPQSDPSVEPPLSQETFSDLWKLLPENNVLSPLPSQAMDDLMLSPDDIEQWFTEDPGP';
+  const comp1 = await analyzeSequenceCompatibility(seq1, 'P04637', seq1);
+  assert.equal(comp1.relationship, 'CANONICAL_EXACT');
+  assert.equal(comp1.numberingMode, 'DIRECT_1_TO_1');
+  assert.equal(comp1.identity, 100);
+  assert.equal(comp1.substitutions, 0);
+  assert.equal(comp1.insertions, 0);
+  assert.equal(comp1.deletions, 0);
+  assert.equal(comp1.alignmentResult?.uploadedToCanonical[10], 10);
+  assert.equal(comp1.alignmentResult?.canonicalToUploaded[10], 10);
+
+  // 2. Single Substitution Variant
+  const canonicalSeq = 'MALWMRLLPLLALLALWGPDPAAAFVNQHLCGSHLVEALYLVCGERGFFYTPKTRREAED';
+  const variantSeq   = 'MALWMRLLPLLALLALWGPDPAAAFVNQHLCGSHLVEALYLVCGERGFFYTPKTRREAED'.replace('A', 'G');
+  const comp2 = await analyzeSequenceCompatibility(variantSeq, 'P01308', canonicalSeq);
+  assert.equal(comp2.relationship, 'CANONICAL_WITH_SUBSTITUTIONS');
+  assert.equal(comp2.numberingMode, 'DIRECT_1_TO_1');
+  assert.equal(comp2.substitutions, 1);
+  assert.equal(comp2.alignmentResult?.uploadedToCanonical[2], 2);
+
+  // 3. Exact Isoform Match (Internal Deletion)
+  const canonicalIso = 'AAAAABBBBBCCCCCDDDDD'; // 20 aa
+  const isoformSeq   = 'AAAAACCCCCDDDDD';     // 15 aa (5 aa deletion of BBBBB)
+  const comp3 = await analyzeSequenceCompatibility(isoformSeq, 'TEST', canonicalIso, { 'TEST-2': isoformSeq });
+  assert.equal(comp3.relationship, 'ISOFORM_EXACT');
+  assert.equal(comp3.matchedIsoformId, 'TEST-2');
+  assert.equal(comp3.numberingMode, 'REQUIRES_ALIGNMENT');
+  assert.equal(comp3.deletions, 5);
+  // Uploaded pos 1..5 -> Canonical pos 1..5
+  assert.equal(comp3.alignmentResult?.uploadedToCanonical[5], 5);
+  // Uploaded pos 6 ('C') -> Canonical pos 11 ('C')
+  assert.equal(comp3.alignmentResult?.uploadedToCanonical[6], 11);
+  // Canonical pos 6..10 ('B') -> deleted in uploaded (null)
+  assert.equal(comp3.alignmentResult?.canonicalToUploaded[6], null);
+
+  // 4. Exact Isoform Match (C-terminal Deletion)
+  const canonicalCterm = 'AAAAABBBBBCCCCCDDDDD'; // 20 aa
+  const isoCterm       = 'AAAAABBBBB';          // 10 aa (C-term deleted)
+  const comp4 = await analyzeSequenceCompatibility(isoCterm, 'TEST2', canonicalCterm, { 'TEST2-2': isoCterm });
+  assert.equal(comp4.relationship, 'ISOFORM_EXACT');
+  assert.equal(comp4.matchedIsoformId, 'TEST2-2');
+  assert.equal(comp4.alignmentResult?.canonicalToUploaded[15], null);
+
+  // 5. Needleman-Wunsch Alignment
+  const aln = alignProteinSequences('HEAGAWGHEE', 'PAWHEAE');
+  assert.ok(aln.identity !== undefined);
+  assert.ok(aln.alignedUploaded.length === aln.alignedCanonical.length);
+
+  // 6. Mutation validation with uploaded WT reference
+  const mutCheck = validateMutationInput('G2A', 'MGKLMN');
+  assert.equal(mutCheck.ok, true);
+  assert.equal(mutCheck.wildType, 'G');
+}
+
 testUniProtFastaParsing();
 testBundledProteinExamples();
 testInputClassification();
@@ -186,5 +349,9 @@ testUniProtBiologyParser();
 testMutationValidation();
 testNearbyResidues();
 testStateResetInvariant();
+testRcsbEvidenceMapping();
+testDiscontinuousSiftsMapping();
+testKabschSuperposition();
+await testSequenceCompatibilityLayer();
 
 console.log('Protein Studio logic tests passed');

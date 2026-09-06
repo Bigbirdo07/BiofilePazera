@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
-import { FastQcReport, MotifSearchReport } from '../types/bio';
-import { generateFastqQcReport, scanSequenceForMotifs } from '../services/biofileApi';
-import { FileUploader } from '../components/common/FileUploader';
+import { FastQcReport, MotifSearchReport } from '../../types/bio';
+import { generateFastqQcReport, scanSequenceForMotifs } from '../../services/biofileApi';
+import { FileUploader } from '../../components/common/FileUploader';
 
 
 import {

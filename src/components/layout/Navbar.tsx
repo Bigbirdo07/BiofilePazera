@@ -3,15 +3,12 @@ import { PageView } from '../../types/bio';
 import {
   Dna,
   Home,
-  FileCode2,
-  Search,
-  History as HistoryIcon,
-  Settings,
-  ShieldCheck,
+  Info,
   Moon,
   Sun,
   Activity,
   HelpCircle,
+  BookOpen,
 } from 'lucide-react';
 import { RcFeedbackModal } from '../RcFeedbackModal';
 
@@ -34,23 +31,12 @@ export const Navbar: React.FC<NavbarProps> = ({
     { view: 'home', label: 'Home', icon: <Home className="w-4 h-4" /> },
     { view: 'sequence_tools', label: 'Sequence Tools', icon: <Dna className="w-4 h-4" /> },
     { view: 'protein_studio', label: 'Protein Studio', icon: <Activity className="w-4 h-4 text-emerald-500" /> },
-    { view: 'file_tools', label: 'File Tools', icon: <FileCode2 className="w-4 h-4" /> },
-    { view: 'inspect', label: 'Inspect', icon: <Search className="w-4 h-4" /> },
-    { view: 'history', label: 'History', icon: <HistoryIcon className="w-4 h-4" /> },
-    { view: 'settings', label: 'Settings', icon: <Settings className="w-4 h-4" /> },
+    { view: 'how_biofile_works', label: 'How PazAtlas Works', icon: <BookOpen className="w-4 h-4" /> },
+    { view: 'about', label: 'About', icon: <Info className="w-4 h-4" /> },
   ];
 
   return (
     <header className="border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 sticky top-0 z-50">
-      {/* Privacy Notice Banner */}
-      <div className="bg-slate-100 dark:bg-slate-800/80 border-b border-slate-200 dark:border-slate-800 px-4 py-1.5 flex items-center justify-between text-xs text-slate-600 dark:text-slate-400">
-        <div className="flex items-center space-x-1.5 text-xs text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800 px-3 py-1 rounded-full font-medium">
-          <ShieldCheck className="w-3.5 h-3.5" />
-          <span>Local processing — sequence files remain on your computer.</span>
-        </div>
-        <span className="text-[11px] font-semibold text-slate-500">v1.0.0-rc.2 (Local & Offline Mode)</span>
-      </div>
-
       {/* Main Navigation Bar */}
       <div className="px-6 py-3 flex items-center justify-between">
         <div className="flex items-center space-x-3 cursor-pointer" onClick={() => onNavigate('home')}>
@@ -59,12 +45,13 @@ export const Navbar: React.FC<NavbarProps> = ({
           </div>
           <div>
             <h1 className="font-bold text-lg text-slate-900 dark:text-slate-100 leading-none">
-              BIOFILE TOOLKIT
+              PAZATLAS
             </h1>
             <p className="text-xs text-slate-500 dark:text-slate-400 font-medium">
-              Sequence & Genomic File Utilities
+              Sequence · Structure · Evidence
             </p>
           </div>
+          <a href="/how-pazatlas-works#research-beta" className="hidden xl:inline-flex items-center rounded-full border border-sky-200 bg-sky-50 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-sky-700 hover:text-sky-800 dark:border-sky-800 dark:bg-sky-950/50 dark:text-sky-300 dark:hover:text-sky-200">Research Beta</a>
         </div>
 
         {/* Nav Links */}
@@ -93,7 +80,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           <button
             onClick={() => setIsFeedbackModalOpen(true)}
             className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border border-sky-200 dark:border-sky-800 bg-sky-50 dark:bg-sky-950/40 text-sky-700 dark:text-sky-300 hover:bg-sky-100 dark:hover:bg-sky-900/60 transition-colors"
-            title="Open RC Tester Feedback Exporter"
+            title="Open PazAtlas Research Beta Feedback"
           >
             <HelpCircle className="w-4 h-4 text-sky-600 dark:text-sky-400" />
             <span>Help & Feedback</span>

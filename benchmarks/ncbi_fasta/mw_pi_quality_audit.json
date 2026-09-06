@@ -1,0 +1,82 @@
+[
+  {
+    "case_id": "dev_001",
+    "acc": "NP_000509.1",
+    "length": 147,
+    "independent_mw_da": 15998.41,
+    "independent_mw_kda": 16.0,
+    "independent_pi": 6.82
+  },
+  {
+    "case_id": "dev_002",
+    "acc": "NP_005219.2",
+    "length": 1210,
+    "independent_mw_da": 134277.4,
+    "independent_mw_kda": 134.28,
+    "independent_pi": 6.26
+  },
+  {
+    "case_id": "dev_003",
+    "acc": "YP_009724389.1",
+    "length": 7096,
+    "independent_mw_da": 794057.79,
+    "independent_mw_kda": 794.06,
+    "independent_pi": 6.32
+  },
+  {
+    "case_id": "dev_004",
+    "acc": "NP_061820.1",
+    "length": 105,
+    "independent_mw_da": 11748.72,
+    "independent_mw_kda": 11.75,
+    "independent_pi": 9.59
+  },
+  {
+    "case_id": "dev_005",
+    "acc": "NP_005359.1",
+    "length": 154,
+    "independent_mw_da": 17183.81,
+    "independent_mw_kda": 17.18,
+    "independent_pi": 7.29
+  },
+  {
+    "case_id": "dev_006",
+    "acc": "NP_000230.1",
+    "length": 148,
+    "independent_mw_da": 16537.02,
+    "independent_mw_kda": 16.54,
+    "independent_pi": 9.38
+  },
+  {
+    "case_id": "dev_007",
+    "acc": "NP_001005785.1",
+    "length": 534,
+    "independent_mw_da": 60410.73,
+    "independent_mw_kda": 60.41,
+    "independent_pi": 8.86
+  },
+  {
+    "case_id": "dev_008",
+    "acc": "NP_000536.3",
+    "length": 631,
+    "independent_mw_da": 67356.45,
+    "independent_mw_kda": 67.36,
+    "independent_pi": 5.82
+  },
+  {
+    "case_id": "dev_009",
+    "acc": "NP_000199.2",
+    "length": 1382,
+    "independent_mw_da": 156332.86,
+    "independent_mw_kda": 156.33,
+    "independent_pi": 5.83
+  },
+  {
+    "case_id": "dev_010",
+    "acc": "XP_011530903.1",
+    "length": 1163,
+    "independent_mw_da": 129789.7,
+    "independent_mw_kda": 129.79,
+    "independent_pi": 5.73
+  }
+]

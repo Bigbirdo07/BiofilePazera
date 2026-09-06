@@ -1,0 +1,779 @@
+[
+  {
+    "case_id": "dev_001",
+    "ncbi_acc": "NP_000509.1",
+    "split": "development",
+    "ncbi_info": {
+      "accession_version": "NP_000509.1",
+      "length": 147,
+      "title": "hemoglobin subunit beta [Homo sapiens]",
+      "organism": "Homo sapiens"
+    },
+    "uniprot_hits": [
+      {
+        "uniprot_acc": "P68871",
+        "entry_name": "HBB_HUMAN",
+        "uniprot_len": 147,
+        "matched_refseq_ids": [
+          "NP_000509.1"
+        ],
+        "protein_name": "Hemoglobin subunit beta",
+        "organism": "Homo sapiens"
+      },
+      {
+        "uniprot_acc": "D9YZU5",
+        "entry_name": "D9YZU5_HUMAN",
+        "uniprot_len": 147,
+        "matched_refseq_ids": [
+          "NP_000509.1"
+        ],
+        "protein_name": "",
+        "organism": "Homo sapiens"
+      }
+    ]
+  },
+  {
+    "case_id": "dev_002",
+    "ncbi_acc": "NP_005219.2",
+    "split": "development",
+    "ncbi_info": {
+      "accession_version": "NP_005219.2",
+      "length": 1210,
+      "title": "epidermal growth factor receptor isoform a precursor [Homo sapiens]",
+      "organism": "Homo sapiens"
+    },
+    "uniprot_hits": [
+      {
+        "uniprot_acc": "P00533",
+        "entry_name": "EGFR_HUMAN",
+        "uniprot_len": 1210,
+        "matched_refseq_ids": [
+          "NP_005219.2"
+        ],
+        "protein_name": "Epidermal growth factor receptor",
+        "organism": "Homo sapiens"
+      },
+      {
+        "uniprot_acc": "Q504U8",
+        "entry_name": "Q504U8_HUMAN",
+        "uniprot_len": 1091,
+        "matched_refseq_ids": [
+          "NP_005219.2"
+        ],
+        "protein_name": "Receptor protein-tyrosine kinase",
+        "organism": "Homo sapiens"
+      },
+      {
+        "uniprot_acc": "F2YGG7",
+        "entry_name": "F2YGG7_HUMAN",
+        "uniprot_len": 1167,
+        "matched_refseq_ids": [
+          "NP_005219.2"
+        ],
+        "protein_name": "Receptor protein-tyrosine kinase",
+        "organism": "Homo sapiens"
+      }
+    ]
+  },
+  {
+    "case_id": "dev_003",
+    "ncbi_acc": "YP_009724389.1",
+    "split": "development",
+    "ncbi_info": {
+      "accession_version": "YP_009724389.1",
+      "length": 7096,
+      "title": "ORF1ab polyprotein [Severe acute respiratory syndrome coronavirus 2]",
+      "organism": "Severe acute respiratory syndrome coronavirus 2"
+    },
+    "uniprot_hits": [
+      {
+        "uniprot_acc": "P0DTD1",
+        "entry_name": "R1AB_SARS2",
+        "uniprot_len": 7096,
+        "matched_refseq_ids": [
+          "YP_009724389.1"
+        ],
+        "protein_name": "Replicase polyprotein 1ab",
+        "organism": "Severe acute respiratory syndrome coronavirus 2"
+      },
+      {
+        "uniprot_acc": "A0A679G4D8",
+        "entry_name": "A0A679G4D8_SARS2",
+        "uniprot_len": 7096,
+        "matched_refseq_ids": [
+          "YP_009724389.1"
+        ],
+        "protein_name": "ORF1ab polyprotein",
+        "organism": "Severe acute respiratory syndrome coronavirus 2"
+      }
+    ]
+  },
+  {
+    "case_id": "dev_004",
+    "ncbi_acc": "NP_061820.1",
+    "split": "development",
+    "ncbi_info": {
+      "accession_version": "NP_061820.1",
+      "length": 105,
+      "title": "cytochrome c [Homo sapiens]",
+      "organism": "Homo sapiens"
+    },
+    "uniprot_hits": [
+      {
+        "uniprot_acc": "P99999",
+        "entry_name": "CYC_HUMAN",
+        "uniprot_len": 105,
+        "matched_refseq_ids": [
+          "NP_061820.1"
+        ],
+        "protein_name": "Cytochrome c",
+        "organism": "Homo sapiens"
+      },
+      {
+        "uniprot_acc": "G4XXL9",
+        "entry_name": "G4XXL9_HUMAN",
+        "uniprot_len": 105,
+        "matched_refseq_ids": [
+          "NP_061820.1"
+        ],
+        "protein_name": "Cytochrome c",
+        "organism": "Homo sapiens"
+      }
+    ]
+  },
+  {
+    "case_id": "dev_005",
+    "ncbi_acc": "NP_005359.1",
+    "split": "development",
+    "ncbi_info": {
+      "accession_version": "NP_005359.1",
+      "length": 154,
+      "title": "myoglobin isoform 1 [Homo sapiens]",
+      "organism": "Homo sapiens"
+    },
+    "uniprot_hits": [
+      {
+        "uniprot_acc": "P02144",
+        "entry_name": "MYG_HUMAN",
+        "uniprot_len": 154,
+        "matched_refseq_ids": [
+          "NP_005359.1"
+        ],
+        "protein_name": "Myoglobin",
+        "organism": "Homo sapiens"
+      }
+    ]
+  },
+  {
+    "case_id": "dev_006",
+    "ncbi_acc": "NP_000230.1",
+    "split": "development",
+    "ncbi_info": {
+      "accession_version": "NP_000230.1",
+      "length": 148,
+      "title": "lysozyme C precursor [Homo sapiens]",
+      "organism": "Homo sapiens"
+    },
+    "uniprot_hits": [
+      {
+        "uniprot_acc": "P61626",
+        "entry_name": "LYSC_HUMAN",
+        "uniprot_len": 148,
+        "matched_refseq_ids": [
+          "NP_000230.1"
+        ],
+        "protein_name": "Lysozyme C",
+        "organism": "Homo sapiens"
+      },
+      {
+        "uniprot_acc": "B2R4C5",
+        "entry_name": "B2R4C5_HUMAN",
+        "uniprot_len": 148,
+        "matched_refseq_ids": [
+          "NP_000230.1"
+        ],
+        "protein_name": "1,4-beta-N-acetylmuramidase C",
+        "organism": "Homo sapiens"
+      }
+    ]
+  },
+  {
+    "case_id": "dev_007",
+    "ncbi_acc": "NP_001005785.1",
+    "split": "development",
+    "ncbi_info": {
+      "accession_version": "NP_001005785.1",
+      "length": 534,
+      "title": "deleted in azoospermia protein 2 isoform 2 [Homo sapiens]",
+      "organism": "Homo sapiens"
+    },
+    "uniprot_hits": [
+      {
+        "uniprot_acc": "Q13117",
+        "entry_name": "DAZ2_HUMAN",
+        "uniprot_len": 558,
+        "matched_refseq_ids": [
+          "NP_001005785.1"
+        ],
+        "protein_name": "Deleted in azoospermia protein 2",
+        "organism": "Homo sapiens"
+      },
+      {
+        "uniprot_acc": "B4DZ07",
+        "entry_name": "B4DZ07_HUMAN",
+        "uniprot_len": 581,
+        "matched_refseq_ids": [
+          "NP_001005785.1"
+        ],
+        "protein_name": "",
+        "organism": "Homo sapiens"
+      }
+    ]
+  },
+  {
+    "case_id": "dev_008",
+    "ncbi_acc": "NP_000536.3",
+    "split": "development",
+    "ncbi_info": {
+      "accession_version": "NP_000536.3",
+      "length": 631,
+      "title": "transcription factor 1, hepatic [Homo sapiens]",
+      "organism": "Homo sapiens"
+    },
+    "uniprot_hits": [
+      {
+        "uniprot_acc": "P20823",
+        "entry_name": "HNF1A_HUMAN",
+        "uniprot_len": 631,
+        "matched_refseq_ids": [
+          "NP_000536.6"
+        ],
+        "protein_name": "Hepatocyte nuclear factor 1-alpha",
+        "organism": "Homo sapiens"
+      },
+      {
+        "uniprot_acc": "E0YMI7",
+        "entry_name": "E0YMI7_HUMAN",
+        "uniprot_len": 603,
+        "matched_refseq_ids": [
+          "NP_000536.6"
+        ],
+        "protein_name": "",
+        "organism": "Homo sapiens"
+      }
+    ]
+  },
+  {
+    "case_id": "dev_009",
+    "ncbi_acc": "NP_000199.2",
+    "split": "development",
+    "ncbi_info": {
+      "accession_version": "NP_000199.2",
+      "length": 1382,
+      "title": "insulin receptor isoform Long preproprotein [Homo sapiens]",
+      "organism": "Homo sapiens"
+    },
+    "uniprot_hits": [
+      {
+        "uniprot_acc": "P06213",
+        "entry_name": "INSR_HUMAN",
+        "uniprot_len": 1382,
+        "matched_refseq_ids": [
+          "NP_000199.2"
+        ],
+        "protein_name": "Insulin receptor",
+        "organism": "Homo sapiens"
+      }
+    ]
+  },
+  {
+    "case_id": "dev_010",
+    "ncbi_acc": "XP_011530903.1",
+    "split": "development",
+    "ncbi_info": {
+      "accession_version": "XP_011530903.1",
+      "length": 1163,
+      "title": "phospholipase B1, membrane-associated isoform X12 [Homo sapiens]",
+      "organism": "Homo sapiens"
+    },
+    "uniprot_hits": []
+  },
+  {
+    "case_id": "gen_001",
+    "ncbi_acc": "NP_001185808.1",
+    "split": "generalization",
+    "ncbi_info": {
+      "accession_version": "NP_001185808.1",
+      "length": 749,
+      "title": "ATP5J2-PTCD1 fusion protein [Homo sapiens]",
+      "organism": "Homo sapiens"
+    },
+    "uniprot_hits": [
+      {
+        "uniprot_acc": "B4DJ38",
+        "entry_name": "B4DJ38_HUMAN",
+        "uniprot_len": 749,
+        "matched_refseq_ids": [
+          "NP_001185808.1"
+        ],
+        "protein_name": "Pentatricopeptide repeat-containing protein 1, mitochondrial",
+        "organism": "Homo sapiens"
+      },
+      {
+        "uniprot_acc": "G3V325",
+        "entry_name": "G3V325_HUMAN",
+        "uniprot_len": 749,
+        "matched_refseq_ids": [
+          "NP_001185808.1"
+        ],
+        "protein_name": "Pentatricopeptide repeat-containing protein 1, mitochondrial",
+        "organism": "Homo sapiens"
+      }
+    ]
+  },
+  {
+    "case_id": "gen_002",
+    "ncbi_acc": "NP_000620.2",
+    "split": "generalization",
+    "ncbi_info": {
+      "accession_version": "NP_000620.2",
+      "length": 557,
+      "title": "interferon alpha/beta receptor 1 isoform 2 precursor [Homo sapiens]",
+      "organism": "Homo sapiens"
+    },
+    "uniprot_hits": [
+      {
+        "uniprot_acc": "P17181",
+        "entry_name": "INAR1_HUMAN",
+        "uniprot_len": 557,
+        "matched_refseq_ids": [
+          "NP_000620.2"
+        ],
+        "protein_name": "Interferon alpha/beta receptor 1",
+        "organism": "Homo sapiens"
+      }
+    ]
+  },
+  {
+    "case_id": "gen_003",
+    "ncbi_acc": "NP_414542.1",
+    "split": "generalization",
+    "ncbi_info": {
+      "accession_version": "NP_414542.1",
+      "length": 21,
+      "title": "thr operon leader peptide [Escherichia coli str. K-12 substr. MG1655]",
+      "organism": "Escherichia coli str. K-12 substr. MG1655"
+    },
+    "uniprot_hits": [
+      {
+        "uniprot_acc": "P0AD86",
+        "entry_name": "LPT_ECOLI",
+        "uniprot_len": 21,
+        "matched_refseq_ids": [
+          "NP_414542.1"
+        ],
+        "protein_name": "thr operon leader peptide",
+        "organism": "Escherichia coli (strain K12)"
+      }
+    ]
+  },
+  {
+    "case_id": "gen_004",
+    "ncbi_acc": "NP_002924.1",
+    "split": "generalization",
+    "ncbi_info": {
+      "accession_version": "NP_002924.1",
+      "length": 156,
+      "title": "ribonuclease pancreatic precursor [Homo sapiens]",
+      "organism": "Homo sapiens"
+    },
+    "uniprot_hits": [
+      {
+        "uniprot_acc": "P07998",
+        "entry_name": "RNAS1_HUMAN",
+        "uniprot_len": 156,
+        "matched_refseq_ids": [
+          "NP_002924.1"
+        ],
+        "protein_name": "Ribonuclease pancreatic",
+        "organism": "Homo sapiens"
+      }
+    ]
+  },
+  {
+    "case_id": "gen_005",
+    "ncbi_acc": "NP_001082.2",
+    "split": "generalization",
+    "ncbi_info": {
+      "accession_version": "NP_001082.2",
+      "length": 751,
+      "title": "diamine oxidase [copper-containing] isoform 2 precursor [Homo sapiens]",
+      "organism": "Homo sapiens"
+    },
+    "uniprot_hits": [
+      {
+        "uniprot_acc": "P19801",
+        "entry_name": "AOC1_HUMAN",
+        "uniprot_len": 751,
+        "matched_refseq_ids": [
+          "NP_001082.2"
+        ],
+        "protein_name": "Diamine oxidase [copper-containing]",
+        "organism": "Homo sapiens"
+      }
+    ]
+  },
+  {
+    "case_id": "gen_006",
+    "ncbi_acc": "NP_000042.1",
+    "split": "generalization",
+    "ncbi_info": {
+      "accession_version": "NP_000042.1",
+      "length": 3056,
+      "title": "ataxia telangiectasia mutated (includes complementation groups A, C and D); Ataxia-telangiectasia mutated (includes complementation groups A, C, D, and E) [Homo sapiens]",
+      "organism": "Homo sapiens"
+    },
+    "uniprot_hits": [
+      {
+        "uniprot_acc": "Q13315",
+        "entry_name": "ATM_HUMAN",
+        "uniprot_len": 3056,
+        "matched_refseq_ids": [
+          "NP_000042.3"
+        ],
+        "protein_name": "Serine-protein kinase ATM",
+        "organism": "Homo sapiens"
+      }
+    ]
+  },
+  {
+    "case_id": "gen_007",
+    "ncbi_acc": "NP_000468.1",
+    "split": "generalization",
+    "ncbi_info": {
+      "accession_version": "NP_000468.1",
+      "length": 609,
+      "title": "albumin preproprotein [Homo sapiens]",
+      "organism": "Homo sapiens"
+    },
+    "uniprot_hits": [
+      {
+        "uniprot_acc": "P02768",
+        "entry_name": "ALBU_HUMAN",
+        "uniprot_len": 609,
+        "matched_refseq_ids": [
+          "NP_000468.1"
+        ],
+        "protein_name": "Albumin",
+        "organism": "Homo sapiens"
+      }
+    ]
+  },
+  {
+    "case_id": "gen_008",
+    "ncbi_acc": "NP_000517.2",
+    "split": "generalization",
+    "ncbi_info": {
+      "accession_version": "NP_000517.2",
+      "length": 472,
+      "title": "keratin, type I cytoskeletal 14 [Homo sapiens]",
+      "organism": "Homo sapiens"
+    },
+    "uniprot_hits": [
+      {
+        "uniprot_acc": "P02533",
+        "entry_name": "K1C14_HUMAN",
+        "uniprot_len": 472,
+        "matched_refseq_ids": [
+          "NP_000517.3"
+        ],
+        "protein_name": "Keratin, type I cytoskeletal 14",
+        "organism": "Homo sapiens"
+      }
+    ]
+  },
+  {
+    "case_id": "gen_009",
+    "ncbi_acc": "NP_001005.1",
+    "split": "generalization",
+    "ncbi_info": {
+      "accession_version": "NP_001005.1",
+      "length": 165,
+      "title": "small ribosomal subunit protein eS10 [Homo sapiens]",
+      "organism": "Homo sapiens"
+    },
+    "uniprot_hits": [
+      {
+        "uniprot_acc": "P46783",
+        "entry_name": "RS10_HUMAN",
+        "uniprot_len": 165,
+        "matched_refseq_ids": [
+          "NP_001005.1"
+        ],
+        "protein_name": "Small ribosomal subunit protein eS10",
+        "organism": "Homo sapiens"
+      }
+    ]
+  },
+  {
+    "case_id": "gen_010",
+    "ncbi_acc": "NP_001254714.1",
+    "split": "generalization",
+    "ncbi_info": {
+      "accession_version": "NP_001254714.1",
+      "length": 250,
+      "title": "lymphocyte function-associated antigen 3 [Macaca mulatta]",
+      "organism": "Macaca mulatta"
+    },
+    "uniprot_hits": [
+      {
+        "uniprot_acc": "H9G2A1",
+        "entry_name": "H9G2A1_MACMU",
+        "uniprot_len": 250,
+        "matched_refseq_ids": [
+          "NP_001254714.1"
+        ],
+        "protein_name": "",
+        "organism": "Macaca mulatta"
+      }
+    ]
+  },
+  {
+    "case_id": "holdout_001",
+    "ncbi_acc": "YP_009724397.2",
+    "split": "blind_holdout",
+    "ncbi_info": {
+      "accession_version": "YP_009724397.2",
+      "length": 419,
+      "title": "nucleocapsid phosphoprotein [Severe acute respiratory syndrome coronavirus 2]",
+      "organism": "Severe acute respiratory syndrome coronavirus 2"
+    },
+    "uniprot_hits": [
+      {
+        "uniprot_acc": "P0DTC9",
+        "entry_name": "NCAP_SARS2",
+        "uniprot_len": 419,
+        "matched_refseq_ids": [
+          "YP_009724397.2"
+        ],
+        "protein_name": "Nucleoprotein",
+        "organism": "Severe acute respiratory syndrome coronavirus 2"
+      },
+      {
+        "uniprot_acc": "A0A6B9VLF5",
+        "entry_name": "A0A6B9VLF5_SARS2",
+        "uniprot_len": 419,
+        "matched_refseq_ids": [
+          "YP_009724397.2"
+        ],
+        "protein_name": "Nucleoprotein",
+        "organism": "Severe acute respiratory syndrome coronavirus 2"
+      }
+    ]
+  },
+  {
+    "case_id": "holdout_002",
+    "ncbi_acc": "NP_001009071.1",
+    "split": "blind_holdout",
+    "ncbi_info": {
+      "accession_version": "NP_001009071.1",
+      "length": 393,
+      "title": "dual specificity mitogen-activated protein kinase kinase 1 [Pan troglodytes]",
+      "organism": "Pan troglodytes"
+    },
+    "uniprot_hits": [
+      {
+        "uniprot_acc": "Q9XT09",
+        "entry_name": "MP2K1_PANTR",
+        "uniprot_len": 393,
+        "matched_refseq_ids": [
+          "NP_001009071.1"
+        ],
+        "protein_name": "Dual specificity mitogen-activated protein kinase kinase 1",
+        "organism": "Pan troglodytes"
+      }
+    ]
+  },
+  {
+    "case_id": "holdout_003",
+    "ncbi_acc": "NP_000109.1",
+    "split": "blind_holdout",
+    "ncbi_info": {
+      "accession_version": "NP_000109.1",
+      "length": 625,
+      "title": "endoglin isoform 2 precursor [Homo sapiens]",
+      "organism": "Homo sapiens"
+    },
+    "uniprot_hits": [
+      {
+        "uniprot_acc": "P17813",
+        "entry_name": "EGLN_HUMAN",
+        "uniprot_len": 658,
+        "matched_refseq_ids": [
+          "NP_000109.1"
+        ],
+        "protein_name": "Endoglin",
+        "organism": "Homo sapiens"
+      }
+    ]
+  },
+  {
+    "case_id": "holdout_004",
+    "ncbi_acc": "NP_002737.2",
+    "split": "blind_holdout",
+    "ncbi_info": {
+      "accession_version": "NP_002737.2",
+      "length": 379,
+      "title": "mitogen-activated protein kinase 3 isoform 1 [Homo sapiens]",
+      "organism": "Homo sapiens"
+    },
+    "uniprot_hits": [
+      {
+        "uniprot_acc": "P27361",
+        "entry_name": "MK03_HUMAN",
+        "uniprot_len": 379,
+        "matched_refseq_ids": [
+          "NP_002737.2"
+        ],
+        "protein_name": "Mitogen-activated protein kinase 3",
+        "organism": "Homo sapiens"
+      },
+      {
+        "uniprot_acc": "L7RXH5",
+        "entry_name": "L7RXH5_HUMAN",
+        "uniprot_len": 379,
+        "matched_refseq_ids": [
+          "NP_002737.2"
+        ],
+        "protein_name": "Mitogen-activated protein kinase",
+        "organism": "Homo sapiens"
+      }
+    ]
+  },
+  {
+    "case_id": "holdout_005",
+    "ncbi_acc": "WP_011012956.1",
+    "split": "blind_holdout",
+    "ncbi_info": {
+      "accession_version": "WP_011012956.1",
+      "length": 113,
+      "title": "MULTISPECIES: 30S ribosomal protein S17 [Pyrococcus]",
+      "organism": "Pyrococcus"
+    },
+    "uniprot_hits": [
+      {
+        "uniprot_acc": "Q8U008",
+        "entry_name": "RS17_PYRFU",
+        "uniprot_len": 113,
+        "matched_refseq_ids": [
+          "WP_011012956.1"
+        ],
+        "protein_name": "Small ribosomal subunit protein uS17",
+        "organism": "Pyrococcus furiosus (strain ATCC 43587 / DSM 3638 / JCM 8422 / Vc1)"
+      }
+    ]
+  },
+  {
+    "case_id": "holdout_006",
+    "ncbi_acc": "NP_001014431.1",
+    "split": "blind_holdout",
+    "ncbi_info": {
+      "accession_version": "NP_001014431.1",
+      "length": 480,
+      "title": "RAC-alpha serine/threonine-protein kinase [Homo sapiens]",
+      "organism": "Homo sapiens"
+    },
+    "uniprot_hits": [
+      {
+        "uniprot_acc": "P31749",
+        "entry_name": "AKT1_HUMAN",
+        "uniprot_len": 480,
+        "matched_refseq_ids": [
+          "NP_001014431.1"
+        ],
+        "protein_name": "RAC-alpha serine/threonine-protein kinase",
+        "organism": "Homo sapiens"
+      },
+      {
+        "uniprot_acc": "B0LPE5",
+        "entry_name": "B0LPE5_HUMAN",
+        "uniprot_len": 480,
+        "matched_refseq_ids": [
+          "NP_001014431.1"
+        ],
+        "protein_name": "Serine/threonine-protein",
+        "organism": "Homo sapiens"
+      }
+    ]
+  },
+  {
+    "case_id": "holdout_007",
+    "ncbi_acc": "XP_001633519.1",
+    "split": "blind_holdout",
+    "ncbi_info": {
+      "accession_version": "XP_001633519.1",
+      "length": 884,
+      "title": "uncharacterized protein LOC5513279 [Nematostella vectensis]",
+      "organism": "Nematostella vectensis"
+    },
+    "uniprot_hits": []
+  },
+  {
+    "case_id": "holdout_008",
+    "ncbi_acc": "YP_009047134.1",
+    "split": "blind_holdout",
+    "ncbi_info": {
+      "accession_version": "YP_009047134.1",
+      "length": 348,
+      "title": "replication-associated protein [McMurdo Ice Shelf pond-associated circular DNA virus-4]",
+      "organism": "McMurdo Ice Shelf pond-associated circular DNA virus-4"
+    },
+    "uniprot_hits": []
+  },
+  {
+    "case_id": "holdout_009",
+    "ncbi_acc": "NP_000312.2",
+    "split": "blind_holdout",
+    "ncbi_info": {
+      "accession_version": "NP_000312.2",
+      "length": 928,
+      "title": "retinoblastoma-associated protein isoform 1 [Homo sapiens]",
+      "organism": "Homo sapiens"
+    },
+    "uniprot_hits": [
+      {
+        "uniprot_acc": "P06400",
+        "entry_name": "RB_HUMAN",
+        "uniprot_len": 928,
+        "matched_refseq_ids": [
+          "NP_000312.2"
+        ],
+        "protein_name": "Retinoblastoma-associated protein",
+        "organism": "Homo sapiens"
+      }
+    ]
+  },
+  {
+    "case_id": "holdout_010",
+    "ncbi_acc": "NP_003343.1",
+    "split": "blind_holdout",
+    "ncbi_info": {
+      "accession_version": "NP_003343.1",
+      "length": 101,
+      "title": "small ubiquitin-related modifier 1 isoform a precursor [Homo sapiens]",
+      "organism": "Homo sapiens"
+    },
+    "uniprot_hits": [
+      {
+        "uniprot_acc": "P63165",
+        "entry_name": "SUMO1_HUMAN",
+        "uniprot_len": 101,
+        "matched_refseq_ids": [
+          "NP_003343.1"
+        ],
+        "protein_name": "Small ubiquitin-related modifier 1",
+        "organism": "Homo sapiens"
+      }
+    ]
+  }
+]

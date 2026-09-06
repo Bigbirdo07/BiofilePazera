@@ -1,7 +1,7 @@
 [package]
 name = "biofile-toolkit"
 version = "1.0.0-rc.2"
-description = "A Tauri App"
+description = "PazAtlas scientific sequence and structure toolkit"
 authors = ["you"]
 edition = "2021"
 

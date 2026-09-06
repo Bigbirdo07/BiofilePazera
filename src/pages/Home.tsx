@@ -1,220 +1,95 @@
-import React, { useState, useEffect } from 'react';
-import { PageView, SequenceType } from '../types/bio';
-import { detectSequenceType } from '../services/biofileApi';
-import { FileUploader } from '../components/common/FileUploader';
-import {
-  FileText,
-  Dna,
-  Scissors,
-  ArrowRight,
-} from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { Activity, ArrowRight, BookOpen, Dna, Info, Upload } from 'lucide-react';
+import { PageView } from '../types/bio';
+import { Pdb3DViewer } from '../components/common/Pdb3DViewer';
 
 interface HomeProps {
   onNavigate: (view: PageView) => void;
   onLoadPastedSequence: (seq: string) => void;
 }
 
-export const Home: React.FC<HomeProps> = ({ onNavigate, onLoadPastedSequence }) => {
-  const [pastedSeq, setPastedSeq] = useState('');
-  const [detectedType, setDetectedType] = useState<SequenceType>('Unknown');
+const tools: Array<{ title: string; description: string; view: PageView; icon: React.ReactNode }> = [
+  { title: 'Protein Studio', description: 'Sequence → structure → evidence', view: 'protein_studio', icon: <Activity className="h-5 w-5" /> },
+  { title: 'Sequence Tools', description: 'DNA, RNA, and protein sequence operations', view: 'sequence_tools', icon: <Dna className="h-5 w-5" /> },
+  { title: 'How PazAtlas Works', description: 'Understand sequences, structures, evidence, and residue context', view: 'how_biofile_works', icon: <BookOpen className="h-5 w-5" /> },
+  { title: 'About', description: 'Meet the researcher and builder behind PazAtlas', view: 'about', icon: <Info className="h-5 w-5" /> },
+];
+
+const flow = ['FASTA', 'Sequence identity', 'Structure', 'Experimental evidence', 'Residue context'];
+const demoPath = '/demo-structures/P00533_EGFR_AlphaFold.pdb';
+
+export const Home: React.FC<HomeProps> = ({ onNavigate }) => {
+  const [reducedMotion, setReducedMotion] = useState(false);
+  const [previewMode, setPreviewMode] = useState<'ribbon' | 'trace' | 'spheres'>('ribbon');
+  const [previewColor, setPreviewColor] = useState<'plddt' | 'chain' | 'spectrum'>('plddt');
+  const [demoPdb, setDemoPdb] = useState('');
+  const [demoError, setDemoError] = useState(false);
 
   useEffect(() => {
-    if (!pastedSeq.trim()) {
-      setDetectedType('Unknown');
-      return;
-    }
-    detectSequenceType(pastedSeq).then(setDetectedType);
-  }, [pastedSeq]);
+    const query = window.matchMedia('(prefers-reduced-motion: reduce)');
+    const updateMotion = () => setReducedMotion(query.matches);
+    updateMotion();
+    query.addEventListener('change', updateMotion);
+    const controller = new AbortController();
+    void fetch(demoPath, { signal: controller.signal })
+      .then((response) => {
+        if (!response.ok) throw new Error(`Demo model returned HTTP ${response.status}`);
+        return response.text();
+      })
+      .then(setDemoPdb)
+      .catch((error: unknown) => {
+        if (!(error instanceof DOMException && error.name === 'AbortError')) setDemoError(true);
+      });
+    const previousOverflow = document.body.style.overflowX;
+    document.body.style.overflowX = 'hidden';
+    return () => {
+      controller.abort();
+      query.removeEventListener('change', updateMotion);
+      document.body.style.overflowX = previousOverflow;
+    };
+  }, []);
 
-  const handleSequenceSubmit = (targetView: PageView = 'sequence_tools') => {
-    if (!pastedSeq.trim()) return;
-    onLoadPastedSequence(pastedSeq);
-    onNavigate(targetView);
-  };
-
+  const modeLabel = previewMode === 'ribbon' ? 'Cartoon' : previewMode === 'trace' ? 'Backbone' : 'Cα Trace';
 
   return (
-    <div className="max-w-5xl mx-auto px-6 py-8 space-y-10">
-      {/* Hero Section */}
-      <div className="text-center space-y-3">
-        <h2 className="text-3xl font-extrabold text-slate-900 dark:text-slate-100 tracking-tight">
-          BIOFILE TOOLKIT
-        </h2>
-        <p className="text-slate-600 dark:text-slate-400 text-base max-w-2xl mx-auto">
-          Local-first sequence manipulation and streaming genomic file utilities for scientists.
-        </p>
-      </div>
-
-      {/* Main Drag & Drop Zone */}
-      <FileUploader
-        label="Upload or Drop FASTA, FASTQ, or PDB file here"
-        description="Supports .fasta, .fastq, .gz, .pdb, .cif files — Click to browse your computer or drag & drop"
-        onFileSelected={(files) => {
-          if (files.length > 0) {
-            const first = files[0];
-            if (first.content) {
-              onLoadPastedSequence(first.content);
-              onNavigate('sequence_tools');
-            } else if (first.name.endsWith('.pdb') || first.name.endsWith('.cif')) {
-              onNavigate('protein_studio');
-            } else if (first.name.includes('fastq') || first.name.includes('fq')) {
-              onNavigate('inspect');
-            } else {
-              onNavigate('file_tools');
-            }
-          }
-        }}
-      />
-
-
-      {/* Paste Sequence Workspace */}
-      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-6 shadow-xs space-y-4">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center space-x-2">
-            <FileText className="w-5 h-5 text-sky-600 dark:text-sky-400" />
-            <h3 className="font-semibold text-slate-800 dark:text-slate-200 text-base">
-              Or paste a sequence
-            </h3>
+    <div className="bg-white text-slate-900 dark:bg-slate-950 dark:text-slate-100">
+      <main>
+        <section className="border-b border-slate-200 bg-[#f4f8fc] dark:border-slate-800 dark:bg-slate-900/70">
+          <div className="mx-auto grid max-w-7xl items-center gap-10 px-5 py-10 sm:px-8 lg:grid-cols-[.9fr_1.1fr] lg:gap-16 lg:py-12">
+            <div className="max-w-xl">
+              <div className="font-mono text-xs font-semibold uppercase tracking-[.18em] text-sky-700 dark:text-sky-300">PAZATLAS</div>
+              <h1 className="mt-5 text-4xl font-semibold leading-tight tracking-tight sm:text-5xl">From sequence to structure, with the biological context in between.</h1>
+              <p className="mt-6 max-w-lg text-base leading-7 text-slate-600 dark:text-slate-300">PazAtlas connects your exact protein sequence to UniProt, AlphaFold, experimental PDB structures, and residue-level evidence.</p>
+              <div className="mt-8 flex flex-wrap items-center gap-4">
+                <button onClick={() => onNavigate('protein_studio')} className="inline-flex min-h-11 items-center gap-2 bg-sky-700 px-5 py-3 text-sm font-semibold text-white transition hover:bg-sky-800 focus:outline-none focus:ring-2 focus:ring-sky-500 focus:ring-offset-2 dark:focus:ring-offset-slate-900"><Upload className="h-4 w-4" /> Open Protein Studio</button>
+                <a href="#tools" className="inline-flex min-h-11 items-center gap-2 px-1 py-3 text-sm font-semibold text-sky-700 hover:text-sky-900 focus:outline-none focus:ring-2 focus:ring-sky-500 dark:text-sky-300">Explore tools <ArrowRight className="h-4 w-4" /></a>
+              </div>
+            </div>
+            <div className="min-w-0">
+              <div className="overflow-hidden border border-slate-700 bg-[#080b10] shadow-sm [&>div]:!h-[360px] [&>div]:!min-h-0 [&>div]:!rounded-none [&>div]:!border-0 [&>div]:!shadow-none sm:[&>div]:!h-[430px]">
+                {demoPdb ? <Pdb3DViewer pdbText={demoPdb} filename="AF-P00533-F1-model_v4.pdb" isAlphaFoldModel colorModeOverride={previewColor} renderModeOverride={previewMode} autoRotateOverride={!reducedMotion} showControls={false} showCameraControls backgroundColor="#080b10" /> : <div className="flex h-[360px] items-center justify-center bg-[#080b10] font-mono text-xs text-slate-400 sm:h-[430px]">{demoError ? 'EGFR preview is not available locally.' : 'Loading EGFR preview…'}</div>}
+              </div>
+              <div className="flex flex-wrap items-center justify-between gap-3 border-x border-b border-slate-700 bg-[#11161d] px-3 py-2">
+                <div className="flex flex-wrap items-center gap-1" role="group" aria-label="Protein representation">
+                  <button onClick={() => setPreviewMode('ribbon')} className={`px-3 py-1.5 text-xs font-medium transition focus:outline-none focus:ring-2 focus:ring-sky-400 ${previewMode === 'ribbon' ? 'bg-sky-700 text-white' : 'text-slate-300 hover:bg-slate-800'}`}>Cartoon</button>
+                  <button onClick={() => setPreviewMode('trace')} className={`px-3 py-1.5 text-xs font-medium transition focus:outline-none focus:ring-2 focus:ring-sky-400 ${previewMode === 'trace' ? 'bg-sky-700 text-white' : 'text-slate-300 hover:bg-slate-800'}`}>Backbone</button>
+                  <button onClick={() => setPreviewMode('spheres')} className={`px-3 py-1.5 text-xs font-medium transition focus:outline-none focus:ring-2 focus:ring-sky-400 ${previewMode === 'spheres' ? 'bg-sky-700 text-white' : 'text-slate-300 hover:bg-slate-800'}`}>Cα Trace</button>
+                </div>
+                <div className="flex flex-wrap items-center gap-1" role="group" aria-label="Protein color">
+                  <button onClick={() => setPreviewColor('plddt')} className={`px-2.5 py-1.5 text-xs font-medium transition focus:outline-none focus:ring-2 focus:ring-sky-400 ${previewColor === 'plddt' ? 'bg-sky-700 text-white' : 'text-slate-300 hover:bg-slate-800'}`}>pLDDT</button>
+                  <button onClick={() => setPreviewColor('chain')} className={`px-2.5 py-1.5 text-xs font-medium transition focus:outline-none focus:ring-2 focus:ring-sky-400 ${previewColor === 'chain' ? 'bg-sky-700 text-white' : 'text-slate-300 hover:bg-slate-800'}`}>Chain</button>
+                  <button onClick={() => setPreviewColor('spectrum')} className={`px-2.5 py-1.5 text-xs font-medium transition focus:outline-none focus:ring-2 focus:ring-sky-400 ${previewColor === 'spectrum' ? 'bg-sky-700 text-white' : 'text-slate-300 hover:bg-slate-900'}`}>Spectrum</button>
+                </div>
+              </div>
+              <div className="flex items-center justify-between gap-3 px-1 pt-2"><p className="font-mono text-[10px] uppercase tracking-[.14em] text-slate-500">EGFR · P00533</p><p className="font-mono text-[10px] uppercase tracking-[.1em] text-slate-500">Representation: {modeLabel}</p></div>
+              <p className="mt-1 font-mono text-[10px] uppercase tracking-[.14em] text-slate-500">AlphaFold DB canonical reference model · local homepage copy</p>
+            </div>
           </div>
-          {pastedSeq.trim() && (
-            <span
-              className={`text-xs px-2.5 py-1 rounded-full font-semibold ${
-                detectedType === 'DNA'
-                  ? 'bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300'
-                  : detectedType === 'RNA'
-                  ? 'bg-purple-100 text-purple-800 dark:bg-purple-950 dark:text-purple-300'
-                  : detectedType === 'Protein'
-                  ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'
-                  : 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300'
-              }`}
-            >
-              Detected: {detectedType}
-            </span>
-          )}
-        </div>
-
-        <textarea
-          value={pastedSeq}
-          onChange={(e) => setPastedSeq(e.target.value)}
-          placeholder="Paste raw sequence or FASTA format here (e.g. >seq1\nATGCCGTA...)"
-          className="w-full h-32 p-3 font-mono text-sm bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-500 text-slate-800 dark:text-slate-200"
-        />
-
-        <div className="flex items-center justify-between pt-1">
-          <span className="text-xs text-slate-500">
-            Length: {pastedSeq.replace(/\s+/g, '').replace(/>.*/g, '').length} bases
-          </span>
-          <button
-            disabled={!pastedSeq.trim()}
-            onClick={() => handleSequenceSubmit('sequence_tools')}
-            className="flex items-center space-x-2 px-4 py-2 bg-slate-900 hover:bg-slate-800 dark:bg-sky-600 dark:hover:bg-sky-500 text-white rounded-lg text-sm font-medium disabled:opacity-40 transition-colors cursor-pointer"
-          >
-            <span>Open in Sequence Tools</span>
-            <ArrowRight className="w-4 h-4" />
-          </button>
-        </div>
-      </div>
-
-      {/* Quick Tools & File Tools Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {/* Quick Tools */}
-        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-5 space-y-4">
-          <div className="flex items-center space-x-2 border-b border-slate-100 dark:border-slate-800 pb-3">
-            <Dna className="w-5 h-5 text-sky-600 dark:text-sky-400" />
-            <h4 className="font-semibold text-slate-800 dark:text-slate-200">Sequence Tools</h4>
-          </div>
-          <div className="grid grid-cols-2 gap-2.5">
-            <button
-              onClick={() => handleSequenceSubmit('sequence_tools')}
-              className="p-3 bg-slate-50 dark:bg-slate-800/60 hover:bg-sky-50 dark:hover:bg-sky-950/50 border border-slate-200 dark:border-slate-800 rounded-lg text-left transition-colors cursor-pointer group"
-            >
-              <div className="font-medium text-sm text-slate-800 dark:text-slate-200 group-hover:text-sky-600 dark:group-hover:text-sky-400">
-                Reverse Complement
-              </div>
-              <div className="text-xs text-slate-500 mt-0.5">Complement DNA/RNA</div>
-            </button>
-
-            <button
-              onClick={() => handleSequenceSubmit('sequence_tools')}
-              className="p-3 bg-slate-50 dark:bg-slate-800/60 hover:bg-sky-50 dark:hover:bg-sky-950/50 border border-slate-200 dark:border-slate-800 rounded-lg text-left transition-colors cursor-pointer group"
-            >
-              <div className="font-medium text-sm text-slate-800 dark:text-slate-200 group-hover:text-sky-600 dark:group-hover:text-sky-400">
-                Translate
-              </div>
-              <div className="text-xs text-slate-500 mt-0.5">6-frame translation</div>
-            </button>
-
-            <button
-              onClick={() => handleSequenceSubmit('sequence_tools')}
-              className="p-3 bg-slate-50 dark:bg-slate-800/60 hover:bg-sky-50 dark:hover:bg-sky-950/50 border border-slate-200 dark:border-slate-800 rounded-lg text-left transition-colors cursor-pointer group"
-            >
-              <div className="font-medium text-sm text-slate-800 dark:text-slate-200 group-hover:text-sky-600 dark:group-hover:text-sky-400">
-                Sequence Statistics
-              </div>
-              <div className="text-xs text-slate-500 mt-0.5">GC% & base counts</div>
-            </button>
-
-            <button
-              onClick={() => handleSequenceSubmit('sequence_tools')}
-              className="p-3 bg-slate-50 dark:bg-slate-800/60 hover:bg-sky-50 dark:hover:bg-sky-950/50 border border-slate-200 dark:border-slate-800 rounded-lg text-left transition-colors cursor-pointer group"
-            >
-              <div className="font-medium text-sm text-slate-800 dark:text-slate-200 group-hover:text-sky-600 dark:group-hover:text-sky-400">
-                DNA ↔ RNA
-              </div>
-              <div className="text-xs text-slate-500 mt-0.5">Transcription converter</div>
-            </button>
-          </div>
-        </div>
-
-        {/* File Tools */}
-        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-5 space-y-4">
-          <div className="flex items-center space-x-2 border-b border-slate-100 dark:border-slate-800 pb-3">
-            <Scissors className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
-            <h4 className="font-semibold text-slate-800 dark:text-slate-200">Large File Tools</h4>
-          </div>
-          <div className="grid grid-cols-2 gap-2.5">
-            <button
-              onClick={() => onNavigate('file_tools')}
-              className="p-3 bg-slate-50 dark:bg-slate-800/60 hover:bg-emerald-50 dark:hover:bg-emerald-950/50 border border-slate-200 dark:border-slate-800 rounded-lg text-left transition-colors cursor-pointer group"
-            >
-              <div className="font-medium text-sm text-slate-800 dark:text-slate-200 group-hover:text-emerald-600 dark:group-hover:text-emerald-400">
-                Split File
-              </div>
-              <div className="text-xs text-slate-500 mt-0.5">Record-aware splitting</div>
-            </button>
-
-            <button
-              onClick={() => onNavigate('file_tools')}
-              className="p-3 bg-slate-50 dark:bg-slate-800/60 hover:bg-emerald-50 dark:hover:bg-emerald-950/50 border border-slate-200 dark:border-slate-800 rounded-lg text-left transition-colors cursor-pointer group"
-            >
-              <div className="font-medium text-sm text-slate-800 dark:text-slate-200 group-hover:text-emerald-600 dark:group-hover:text-emerald-400">
-                Validate File
-              </div>
-              <div className="text-xs text-slate-500 mt-0.5">FASTA / FASTQ check</div>
-            </button>
-
-            <button
-              onClick={() => onNavigate('file_tools')}
-              className="p-3 bg-slate-50 dark:bg-slate-800/60 hover:bg-emerald-50 dark:hover:bg-emerald-950/50 border border-slate-200 dark:border-slate-800 rounded-lg text-left transition-colors cursor-pointer group"
-            >
-              <div className="font-medium text-sm text-slate-800 dark:text-slate-200 group-hover:text-emerald-600 dark:group-hover:text-emerald-400">
-                Merge Files
-              </div>
-              <div className="text-xs text-slate-500 mt-0.5">Combine FASTA/FASTQ</div>
-            </button>
-
-            <button
-              onClick={() => onNavigate('file_tools')}
-              className="p-3 bg-slate-50 dark:bg-slate-800/60 hover:bg-emerald-50 dark:hover:bg-emerald-950/50 border border-slate-200 dark:border-slate-800 rounded-lg text-left transition-colors cursor-pointer group"
-            >
-              <div className="font-medium text-sm text-slate-800 dark:text-slate-200 group-hover:text-emerald-600 dark:group-hover:text-emerald-400">
-                SHA-256 Verification
-              </div>
-              <div className="text-xs text-slate-500 mt-0.5">Generate / verify hash</div>
-            </button>
-          </div>
-        </div>
-      </div>
+        </section>
+        <section className="mx-auto max-w-5xl px-5 py-14 text-center sm:px-8"><h2 className="text-2xl font-semibold tracking-tight sm:text-3xl">Understand what your structure actually represents.</h2><p className="mx-auto mt-4 max-w-3xl text-base leading-7 text-slate-600 dark:text-slate-300">PazAtlas checks whether your uploaded sequence matches the UniProt canonical sequence, a documented isoform, or a differing variant before structural interpretation. That relationship stays clear across models, evidence, and residue numbering.</p><div className="mt-10 flex flex-col items-stretch justify-center gap-3 text-left sm:flex-row sm:items-center sm:gap-0 sm:text-center">{flow.map((item, index) => <React.Fragment key={item}><div className="border border-slate-200 bg-white px-4 py-3 text-sm font-medium dark:border-slate-700 dark:bg-slate-900">{item}</div>{index < flow.length - 1 && <span className="hidden px-2 text-sky-600 sm:block" aria-hidden="true">→</span>}</React.Fragment>)}</div></section>
+        <section id="tools" className="scroll-mt-6 border-y border-slate-200 bg-[#fbfcfe] px-5 py-14 dark:border-slate-800 dark:bg-slate-950 sm:px-8"><div className="mx-auto max-w-5xl"><h2 className="text-2xl font-semibold tracking-tight">Explore PazAtlas</h2><div className="mt-7 grid gap-3 sm:grid-cols-2">{tools.map((tool) => <button key={tool.title} onClick={() => onNavigate(tool.view)} className="group flex min-h-28 items-center gap-4 border border-slate-200 bg-white p-5 text-left transition hover:border-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-500 dark:border-slate-700 dark:bg-slate-900"><span className="text-sky-700 dark:text-sky-300">{tool.icon}</span><span className="min-w-0 flex-1"><span className="block font-semibold">{tool.title}</span><span className="mt-1 block text-sm text-slate-600 dark:text-slate-400">{tool.description}</span></span><ArrowRight className="h-4 w-4 shrink-0 text-slate-400 transition group-hover:translate-x-1 group-hover:text-sky-700" /></button>)}</div></div></section>
+        <section className="mx-auto max-w-5xl px-5 py-10 sm:px-8"><div className="border-y border-slate-200 py-5 text-center font-mono text-[11px] uppercase tracking-[.12em] leading-7 text-slate-500 dark:border-slate-800">Exact sequence comparison <span className="mx-2 text-sky-600">•</span> Isoform awareness <span className="mx-2 text-sky-600">•</span> AlphaFold reference <span className="mx-2 text-sky-600">•</span> PDB evidence <span className="mx-2 text-sky-600">•</span> Residue mapping</div><p className="mt-6 text-center text-xs text-slate-500">Local-first sequence and file analysis. Online biological databases are contacted only when requested.</p></section>
+      </main>
     </div>
   );
 };
