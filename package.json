@@ -8,7 +8,6 @@
     "build": "tsc && vite build",
     "test": "npm run test:protein-studio",
     "test:protein-studio": "node --experimental-strip-types tests/proteinStudio.test.ts",
-
     "preview": "vite preview",
     "tauri": "tauri"
   },
@@ -16,6 +15,7 @@
     "@tauri-apps/api": "^2",
     "@tauri-apps/plugin-dialog": "^2.7.3",
     "@tauri-apps/plugin-opener": "^2",
+    "@vercel/analytics": "^2.0.1",
     "clsx": "^2.1.1",
     "lucide-react": "^1.38.0",
     "ngl": "^2.4.0",
