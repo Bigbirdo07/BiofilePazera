@@ -19,6 +19,7 @@ import { PageView, ProteinProperties } from '../types/bio';
 import { calculateProteinProperties, extractFastaFromPdb } from '../services/biofileApi';
 import { FileUploader } from '../components/common/FileUploader';
 import { Pdb3DViewer } from '../components/common/Pdb3DViewer';
+import exampleProteinFasta from '../../data/protein-studio-examples/P00533_EGFR_HUMAN_ncbi.fasta?raw';
 import {
   MutationDescription,
   BiologyAnnotation,
@@ -68,6 +69,8 @@ interface ProteinStudioProps {
 type InputMode = 'structure' | 'uniprot' | 'sequence';
 type WorkspaceTab = 'structure' | 'confidence' | 'biology' | 'evidence' | 'sequence' | 'mutation';
 type LoadStep = 'metadata' | 'model' | 'confidence';
+
+const exampleStructurePath = '/demo-structures/P00533_EGFR_AlphaFold.pdb';
 
 interface SelectedFile {
   name: string;
@@ -171,6 +174,7 @@ export const ProteinStudio: React.FC<ProteinStudioProps> = ({ onNavigate }) => {
   const [errorDetails, setErrorDetails] = useState<string | null>(null);
   const [noticeMessage, setNoticeMessage] = useState<string | null>(null);
   const [noticeDetails, setNoticeDetails] = useState<string | null>(null);
+  const [exampleLoading, setExampleLoading] = useState<InputMode | null>(null);
   const [isFastqDetected, setIsFastqDetected] = useState(false);
   const [copiedSeq, setCopiedSeq] = useState(false);
   const [copiedFasta, setCopiedFasta] = useState(false);
@@ -395,12 +399,13 @@ export const ProteinStudio: React.FC<ProteinStudioProps> = ({ onNavigate }) => {
     clearErrors();
   };
 
-  const handleLoadStructure = async () => {
-    if (!structureFile) {
+  const handleLoadStructure = async (fileOverride?: SelectedFile) => {
+    const fileToLoad = fileOverride || structureFile;
+    if (!fileToLoad) {
       setErrorMessage('Please select or drop a PDB/mmCIF structure file.');
       return;
     }
-    if (!structureFile.content) {
+    if (!fileToLoad.content) {
       setErrorMessage('Structure file content is not available.');
       setErrorDetails('Drop the file into the panel, or use browser file selection. Native path-only selection is not readable in this build.');
       return;
@@ -412,19 +417,19 @@ export const ProteinStudio: React.FC<ProteinStudioProps> = ({ onNavigate }) => {
     setExecutionState('loading');
     const { id } = startRequest();
     try {
-      const sourceType = classifyStructureSource(structureFile.content, structureFile.name);
-      const atoms = parsePdbAtoms(structureFile.content);
+      const sourceType = classifyStructureSource(fileToLoad.content, fileToLoad.name);
+      const atoms = parsePdbAtoms(fileToLoad.content);
       if (!atoms.length) throw new Error('No C-alpha ATOM records were found. True mmCIF coordinate parsing is not available in this RC.');
       const sequence = atoms.map((atom) => atom.aa).join('');
       if (!isLatestRequest(id)) return;
       const chains = extractChainsFromAtoms(atoms);
       const protein: ActiveProtein = {
-        title: structureFile.name,
+        title: fileToLoad.name,
         sourceType,
         sourceLabel: sourceType === 'EXPERIMENTAL' ? 'Experimental Structure' : 'Local Structure',
         locationLabel: 'LOCAL',
         structureType: sourceType === 'EXPERIMENTAL' ? 'Experimental / deposited coordinates' : 'Local coordinate file',
-        pdbText: structureFile.content,
+        pdbText: fileToLoad.content,
         sequence,
         canonicalSequence: sourceType === 'ALPHAFOLD_PREDICTED' ? sequence : undefined,
         sequenceLabel: 'Observed structure-derived sequence',
@@ -445,6 +450,37 @@ export const ProteinStudio: React.FC<ProteinStudioProps> = ({ onNavigate }) => {
       setErrorMessage('Structure could not be parsed.');
       setErrorDetails(err instanceof Error ? err.message : 'Unknown structure parsing error.');
     }
+  };
+
+  const handleTryStructureExample = async () => {
+    setInputMode('structure');
+    setExampleLoading('structure');
+    clearErrors();
+    try {
+      const response = await fetch(exampleStructurePath);
+      if (!response.ok) throw new Error(`Example structure returned HTTP ${response.status}`);
+      const content = await response.text();
+      const exampleFile: SelectedFile = {
+        name: 'P00533_EGFR_AlphaFold.pdb',
+        size: content.length,
+        content,
+        format: 'PDB',
+      };
+      setStructureFile(exampleFile);
+      await handleLoadStructure(exampleFile);
+    } catch (error) {
+      setErrorMessage('The EGFR structure example could not be loaded.');
+      setErrorDetails(error instanceof Error ? error.message : 'Local demo asset unavailable.');
+    } finally {
+      setExampleLoading(null);
+    }
+  };
+
+  const handleTryUniProtExample = () => {
+    setInputMode('uniprot');
+    setUniprotAccession('P00533');
+    setExampleLoading('uniprot');
+    void handleFetchUniProt('P00533').finally(() => setExampleLoading(null));
   };
 
   const normalizeAlphaFoldMetadata = (data: unknown, accession: string): AlphaFoldMetadata | null => {
@@ -606,8 +642,8 @@ export const ProteinStudio: React.FC<ProteinStudioProps> = ({ onNavigate }) => {
     }
   };
 
-  const handleAnalyzeSequence = async () => {
-    const raw = sequenceFile?.content || pastedSequence;
+  const handleAnalyzeSequence = async (rawOverride?: string) => {
+    const raw = rawOverride || sequenceFile?.content || pastedSequence;
     if (!raw.trim()) {
       setErrorMessage('Please upload a FASTA file or paste an amino-acid sequence.');
       return;
@@ -692,6 +728,15 @@ export const ProteinStudio: React.FC<ProteinStudioProps> = ({ onNavigate }) => {
       setErrorMessage('Invalid FASTA or amino-acid sequence input.');
       setErrorDetails(err instanceof Error ? err.message : 'Unable to parse sequence input.');
     }
+  };
+
+  const handleTrySequenceExample = () => {
+    setInputMode('sequence');
+    setSequenceFile(null);
+    setPastedSequence(exampleProteinFasta);
+    clearErrors();
+    setExampleLoading('sequence');
+    void handleAnalyzeSequence(exampleProteinFasta).finally(() => setExampleLoading(null));
   };
 
   const handleMutationInspect = () => {
@@ -868,6 +913,25 @@ export const ProteinStudio: React.FC<ProteinStudioProps> = ({ onNavigate }) => {
             </div>
           </div>
 
+          <div className="border-t border-slate-100 pt-4 dark:border-slate-800">
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Try an example</p>
+            <p className="mt-1 text-[11px] leading-5 text-slate-500">Explore the three Protein Studio input workflows without preparing your own file.</p>
+            <div className="mt-3 grid gap-2">
+              <button onClick={() => void handleTryStructureExample()} disabled={exampleLoading !== null} className="flex items-center justify-between gap-3 border border-slate-200 bg-slate-50 px-3 py-2 text-left text-xs font-semibold text-slate-700 transition hover:border-sky-400 hover:bg-sky-50 disabled:cursor-wait disabled:opacity-60 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200 dark:hover:border-sky-700 dark:hover:bg-slate-900">
+                <span>Structure file · EGFR PDB</span>
+                {exampleLoading === 'structure' ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <Layers className="h-3.5 w-3.5 text-sky-600" />}
+              </button>
+              <button onClick={handleTryUniProtExample} disabled={exampleLoading !== null} className="flex items-center justify-between gap-3 border border-slate-200 bg-slate-50 px-3 py-2 text-left text-xs font-semibold text-slate-700 transition hover:border-sky-400 hover:bg-sky-50 disabled:cursor-wait disabled:opacity-60 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200 dark:hover:border-sky-700 dark:hover:bg-slate-900">
+                <span>UniProt · P00533 EGFR</span>
+                {exampleLoading === 'uniprot' ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <Globe className="h-3.5 w-3.5 text-sky-600" />}
+              </button>
+              <button onClick={handleTrySequenceExample} disabled={exampleLoading !== null} className="flex items-center justify-between gap-3 border border-slate-200 bg-slate-50 px-3 py-2 text-left text-xs font-semibold text-slate-700 transition hover:border-sky-400 hover:bg-sky-50 disabled:cursor-wait disabled:opacity-60 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200 dark:hover:border-sky-700 dark:hover:bg-slate-900">
+                <span>Protein sequence · EGFR</span>
+                {exampleLoading === 'sequence' ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <Dna className="h-3.5 w-3.5 text-sky-600" />}
+              </button>
+            </div>
+          </div>
+
           {isFastqDetected && (
             <div className="p-4 bg-amber-50 dark:bg-amber-950/60 border border-amber-200 dark:border-amber-800 rounded-lg space-y-3">
               <div className="flex items-center gap-2 text-amber-900 dark:text-amber-200 font-bold text-xs">
@@ -913,7 +977,7 @@ export const ProteinStudio: React.FC<ProteinStudioProps> = ({ onNavigate }) => {
               </div>
               <FileUploader accept=".pdb,.cif,.mmcif,.ent" label="Drop PDB or mmCIF" description="Supported: .pdb, .cif, .mmcif" onFileSelected={handleStructureFiles} />
               {structureFile && <FileCard file={structureFile} onClear={() => setStructureFile(null)} />}
-              <button disabled={!structureFile || executionState === 'loading'} onClick={handleLoadStructure} className="w-full py-2.5 bg-sky-600 hover:bg-sky-700 text-white rounded-lg text-xs font-bold disabled:opacity-50 flex items-center justify-center gap-2">
+              <button disabled={!structureFile || executionState === 'loading'} onClick={() => void handleLoadStructure()} className="w-full py-2.5 bg-sky-600 hover:bg-sky-700 text-white rounded-lg text-xs font-bold disabled:opacity-50 flex items-center justify-center gap-2">
                 {executionState === 'loading' ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Layers className="w-4 h-4" />}
                 <span>Load Structure</span>
               </button>
@@ -966,7 +1030,7 @@ export const ProteinStudio: React.FC<ProteinStudioProps> = ({ onNavigate }) => {
                 className="w-full h-40 p-3 font-mono text-[11px] leading-relaxed bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-500 resize-y"
               />
               </div>
-              <button disabled={(!sequenceFile && !pastedSequence.trim()) || executionState === 'loading'} onClick={handleAnalyzeSequence} className="w-full py-2.5 bg-sky-600 hover:bg-sky-700 text-white rounded-lg text-xs font-bold disabled:opacity-50 flex items-center justify-center gap-2">
+              <button disabled={(!sequenceFile && !pastedSequence.trim()) || executionState === 'loading'} onClick={() => void handleAnalyzeSequence()} className="w-full py-2.5 bg-sky-600 hover:bg-sky-700 text-white rounded-lg text-xs font-bold disabled:opacity-50 flex items-center justify-center gap-2">
                 {executionState === 'loading' ? <RefreshCw className="w-4 h-4 animate-spin" /> : <FileText className="w-4 h-4" />}
                 <span>Analyze Sequence</span>
               </button>
